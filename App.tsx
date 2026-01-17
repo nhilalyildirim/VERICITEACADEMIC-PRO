@@ -50,23 +50,37 @@ const App: React.FC = () => {
       }
 
       // 2. Verify Citations (Batched)
-      // We verify in chunks of 3 to avoid hitting API Rate Limits (429)
-      const BATCH_SIZE = 3;
+      // We process in small batches to respect the API rate limit (429 errors).
+      const BATCH_SIZE = 2; // Reduced batch size for safety
       const verifiedCitations: Citation[] = [];
 
       for (let i = 0; i < extractedRaw.length; i += BATCH_SIZE) {
           const chunk = extractedRaw.slice(i, i + BATCH_SIZE);
           
-          // Process current chunk in parallel
-          const chunkResults = await Promise.all(
-              chunk.map((item: any) => verifyCitationWithCrossref(item))
-          );
-          
-          verifiedCitations.push(...chunkResults);
+          try {
+            // Process current chunk in parallel
+            const chunkResults = await Promise.all(
+                chunk.map((item: any) => verifyCitationWithCrossref(item))
+            );
+            verifiedCitations.push(...chunkResults);
+          } catch (chunkError) {
+             console.error("Error processing chunk:", chunkError);
+             // If a chunk fails, try to mark them as 'Pending' or 'Error' instead of crashing
+             // For now, we just skip them or add simple fallback
+             chunk.forEach((item: any) => {
+                 verifiedCitations.push({
+                     id: Math.random().toString(36).substr(2, 9),
+                     originalText: item.original_text || "Error processing",
+                     status: VerificationStatus.AMBIGUOUS,
+                     confidenceScore: 0,
+                     analysisNotes: "Analysis failed due to network error."
+                 } as Citation);
+             });
+          }
 
-          // Add a small delay between chunks if there are more items to process
+          // Delay between batches to allow API quota to recover
           if (i + BATCH_SIZE < extractedRaw.length) {
-              await new Promise(resolve => setTimeout(resolve, 1500));
+              await new Promise(resolve => setTimeout(resolve, 2000));
           }
       }
 
