@@ -8,9 +8,10 @@ interface HeaderProps {
     onLogin: () => void;
     onLogout: () => void;
     onNavigate: (view: 'home' | 'dashboard') => void;
+    onPricingClick: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onLogout, onNavigate }) => {
+export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onLogout, onNavigate, onPricingClick }) => {
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -32,7 +33,7 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onLo
              {user && (
                  <button onClick={() => onNavigate('dashboard')} className={`font-medium transition-colors ${currentView === 'dashboard' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Dashboard</button>
              )}
-             <a href="#" className="text-slate-500 hover:text-indigo-600 font-medium transition-colors">Pricing</a>
+             <button onClick={onPricingClick} className="text-slate-500 hover:text-indigo-600 font-medium transition-colors">Pricing</button>
           </nav>
 
           <div className="flex items-center gap-4">
