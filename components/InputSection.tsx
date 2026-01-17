@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { UploadCloud, FileText, X } from 'lucide-react';
 
 interface InputSectionProps {

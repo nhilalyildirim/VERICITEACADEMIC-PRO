@@ -9,7 +9,7 @@ interface DashboardProps {
     onViewReport: (report: AnalysisReport) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ user, history, onNavigateHome, onViewReport }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ history, onNavigateHome, onViewReport }) => {
     
     // Calculate stats
     const totalAnalyses = history.length;

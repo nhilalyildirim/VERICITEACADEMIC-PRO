@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, LogIn, LayoutDashboard, LogOut } from 'lucide-react';
+import { ShieldCheck, LogIn, LogOut } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
