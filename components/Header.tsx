@@ -1,17 +1,18 @@
 import React from 'react';
-import { ShieldCheck, LogIn, LogOut } from 'lucide-react';
+import { ShieldCheck, LogIn, LogOut, Sparkles } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
     user: User | null;
     currentView: string;
     onLogin: () => void;
+    onRegister: () => void;
     onLogout: () => void;
     onNavigate: (view: 'home' | 'dashboard') => void;
     onPricingClick: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onLogout, onNavigate, onPricingClick }) => {
+export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, onPricingClick }) => {
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -56,13 +57,21 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onLo
                      </button>
                  </div>
              ) : (
-                <button 
-                    onClick={onLogin}
-                    className="inline-flex items-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 transition-all"
-                >
-                    <LogIn className="w-4 h-4" />
-                    Sign In
-                </button>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={onLogin}
+                        className="hidden md:flex px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+                    >
+                        Sign In
+                    </button>
+                    <button 
+                        onClick={onRegister}
+                        className="inline-flex items-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 transition-all shadow-md"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        Get Started
+                    </button>
+                </div>
              )}
           </div>
         </div>

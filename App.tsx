@@ -13,7 +13,7 @@ const App: React.FC = () => {
   // State
   const [user, setUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'upgrade'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'upgrade'>('login');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   // Navigation & Data State
@@ -23,13 +23,22 @@ const App: React.FC = () => {
   const [analysisCount, setAnalysisCount] = useState(0);
 
   // Handlers
-  const handleLogin = () => {
-    // Mock login logic
-    const mockUser = { id: 'u123', isPremium: authMode === 'upgrade', analysisCount: 0 };
+  const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade') => {
+    // Mock User Creation / Retrieval
+    const mockUser: User = { 
+        id: mode === 'register' ? `new_${Date.now()}` : 'u123', 
+        isPremium: mode === 'upgrade', 
+        analysisCount: 0 
+    };
+    
     setUser(mockUser);
     setIsAuthModalOpen(false);
-    // Redirect to dashboard on login
-    setView('dashboard');
+    
+    // If upgrading, stay on current view but refresh state. 
+    // If login/register, go to dashboard.
+    if (mode !== 'upgrade') {
+        setView('dashboard');
+    }
   };
 
   const handleLogout = () => {
@@ -155,6 +164,7 @@ const App: React.FC = () => {
         user={user} 
         currentView={view}
         onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} 
+        onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
         onLogout={handleLogout}
         onNavigate={(v) => setView(v)}
         onPricingClick={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }}
@@ -180,8 +190,8 @@ const App: React.FC = () => {
       <AuthModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)}
-        onLogin={handleLogin}
-        mode={authMode}
+        onAuthSuccess={handleAuthSuccess}
+        initialMode={authMode}
       />
     </div>
   );
