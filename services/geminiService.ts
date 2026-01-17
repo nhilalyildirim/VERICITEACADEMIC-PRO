@@ -1,7 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Gemini Client
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// We use the exact initialization pattern required.
+// Note: In Vite, process.env.API_KEY is replaced by a string literal at build time.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Helper: Delay function
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -13,25 +15,34 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 3, baseDelay 
   try {
     return await operation();
   } catch (error: any) {
-    const isRateLimit = error.message?.includes("429") || error.message?.includes("Quota") || error.status === 429 || error.message?.includes("503");
+    // Check for common rate limit or service overload errors
+    const isRateLimit = 
+      error?.status === 429 || 
+      error?.status === 503 ||
+      (error?.message && (
+        error.message.includes("429") || 
+        error.message.includes("Quota") || 
+        error.message.includes("overloaded")
+      ));
     
     if (retries > 0 && isRateLimit) {
-      console.warn(`API Rate limit (429). Retrying in ${baseDelay}ms...`);
+      console.warn(`API Rate limit hit (429). Retrying in ${baseDelay}ms...`);
       await delay(baseDelay);
       return withRetry(operation, retries - 1, baseDelay * 2);
     }
+    // For other errors, or if retries exhausted, throw
     throw error;
   }
 }
 
 /**
- * Extracts citations from text.
+ * Extracts citations from text using Gemini.
  */
 export const extractCitationsFromText = async (text: string): Promise<any[]> => {
   if (!text || text.length < 5) return [];
-  if (!process.env.API_KEY) throw new Error("Missing API Key.");
 
   return withRetry(async () => {
+    // Use gemini-3-flash-preview for basic extraction task
     const model = "gemini-3-flash-preview"; 
     const prompt = `
       Extract citations from the text below.
@@ -65,17 +76,21 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
     });
 
     let jsonText = response.text || "[]";
+    // Clean potential markdown code blocks
     jsonText = jsonText.replace(/^```json\s*/, "").replace(/\s*```$/, "").trim();
-    return JSON.parse(jsonText);
-  }, 3, 2000); // 3 retries, starting at 2s delay
+    try {
+        return JSON.parse(jsonText);
+    } catch (e) {
+        console.error("Failed to parse JSON from Gemini:", jsonText);
+        return [];
+    }
+  }, 3, 2000);
 };
 
 /**
  * Secondary Verification Layer: Google Search Grounding.
  */
 export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified: boolean, title?: string, url?: string, snippet?: string }> => {
-  if (!process.env.API_KEY) return { verified: false };
-
   try {
     return await withRetry(async () => {
         const query = `"${citation.title}" ${citation.author} academic paper`;
@@ -101,13 +116,14 @@ export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified:
             }
         }
         
+        // Fallback: Check model text response if grounding chunks are missing but model confirms
         const text = response.text?.toLowerCase() || "";
         if (text.includes("yes") && (text.includes("exists") || text.includes("published"))) {
              return { verified: true, snippet: "Model confirmed existence via search context." };
         }
 
         return { verified: false };
-    }, 3, 3000); // Higher delay for search
+    }, 3, 3000); // Higher delay for search as it is more expensive
 
   } catch (error) {
     console.error("Search verification failed:", error);
@@ -115,6 +131,9 @@ export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified:
   }
 };
 
+/**
+ * Reformat citation style using Gemini.
+ */
 export const reformatCitation = async (citationData: any, style: string): Promise<string> => {
   try {
      return await withRetry(async () => {
@@ -125,6 +144,7 @@ export const reformatCitation = async (citationData: any, style: string): Promis
         return response.text?.trim() || "";
      }, 2, 1000);
   } catch (error) {
+    console.error("Reformat failed", error);
     return "";
   }
 };
