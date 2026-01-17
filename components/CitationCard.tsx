@@ -60,7 +60,7 @@ export const CitationCard: React.FC<CitationCardProps> = ({ citation }) => {
                 <h4 className="text-slate-900 font-medium text-lg leading-snug">
                     {citation.extractedTitle || "Unknown Title"}
                 </h4>
-                <p className="text-slate-500 text-sm mt-1">
+                <p className="text-slate-500 text-sm mt-1 line-clamp-2">
                    {citation.originalText}
                 </p>
                 
@@ -89,15 +89,16 @@ export const CitationCard: React.FC<CitationCardProps> = ({ citation }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                     <h5 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Analysis Findings</h5>
-                    <p className="text-sm text-slate-700 mb-2">{citation.analysisNotes}</p>
-                    {citation.databaseMatch?.url && (
+                    <p className="text-sm text-slate-700 mb-3">{citation.analysisNotes}</p>
+                    
+                    {citation.databaseMatch?.url && citation.status === VerificationStatus.VERIFIED && (
                         <a 
                             href={citation.databaseMatch.url} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:underline"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium text-sm transition-colors"
                         >
-                            View Source <ExternalLink className="w-3 h-3" />
+                            Open Source <ExternalLink className="w-4 h-4" />
                         </a>
                     )}
                 </div>

@@ -89,6 +89,9 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
 
     const isMatch = similarity > 0.65; // Threshold for verification
 
+    // Prioritize getting a valid URL
+    const sourceUrl = topMatch.URL || topMatch.resource?.primary?.URL || (topMatch.link?.[0]?.URL) || `https://doi.org/${topMatch.DOI}`;
+
     if (isMatch) {
       return {
         id: Math.random().toString(36).substr(2, 9),
@@ -101,7 +104,7 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
           source: 'Crossref',
           doi: topMatch.DOI,
           title: realTitle,
-          url: topMatch.URL,
+          url: sourceUrl,
           publishedDate: topMatch.created?.['date-parts']?.[0]?.join('-') || 'Unknown'
         },
         analysisNotes: "Successfully verified against Crossref database.",

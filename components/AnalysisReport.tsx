@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AnalysisReport } from '../types';
 import { CitationCard } from './CitationCard';
-import { Download, Printer, ArrowLeft } from 'lucide-react';
+import { Download, Printer, ArrowLeft, Loader2 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 interface AnalysisReportProps {
   report: AnalysisReport;
@@ -9,9 +11,58 @@ interface AnalysisReportProps {
 }
 
 export const AnalysisReportView: React.FC<AnalysisReportProps> = ({ report, onReset }) => {
-  
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('report-content');
+    if (!element) return;
+
+    setIsDownloading(true);
+    try {
+      // Small delay to ensure styles are ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const canvas = await html2canvas(element, {
+        scale: 2, // Higher resolution
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const imgWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`VeriCite_Report_${report.id}.pdf`);
+    } catch (error) {
+      console.error("PDF Generation failed", error);
+      alert("Failed to generate PDF. You can try the Print -> Save as PDF option.");
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -28,18 +79,25 @@ export const AnalysisReportView: React.FC<AnalysisReportProps> = ({ report, onRe
                 onClick={handlePrint}
                 className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 font-medium text-sm transition-colors"
             >
-                <Printer className="w-4 h-4" /> Print Report
+                <Printer className="w-4 h-4" /> Print View
             </button>
             <button 
-                onClick={handlePrint}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm shadow-sm transition-colors"
+                onClick={handleDownloadPDF}
+                disabled={isDownloading}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm shadow-sm transition-colors disabled:opacity-70 disabled:cursor-wait"
             >
-                <Download className="w-4 h-4" /> Download PDF
+                {isDownloading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                    <Download className="w-4 h-4" />
+                )}
+                {isDownloading ? 'Generating...' : 'Download PDF'}
             </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* This ID is used by html2canvas */}
+      <div id="report-content" className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 md:p-8 border-b border-slate-100 bg-slate-50/50">
             <div className="flex justify-between items-start">
                 <div>
@@ -84,6 +142,11 @@ export const AnalysisReportView: React.FC<AnalysisReportProps> = ({ report, onRe
                     <CitationCard key={idx} citation={citation} />
                 ))
             )}
+        </div>
+        
+        {/* Footer for PDF only */}
+        <div className="hidden print:block p-8 pt-0 text-center">
+             <p className="text-xs text-slate-400">VeriCite Academic Report • www.vericiteacademic.com</p>
         </div>
       </div>
     </div>

@@ -87,10 +87,13 @@ const App: React.FC = () => {
       setView('report');
 
     } catch (error: any) {
-      console.error(error);
-      const msg = error?.message || "Unknown error";
+      console.error("Full Analysis Error:", error);
+      const msg = error?.message || error?.toString() || "Unknown error";
+      
       if (msg.includes("Missing API Key")) {
          alert("Configuration Error: API Key not found. Please check Vercel Environment Variables and Redeploy.");
+      } else if (msg.includes("Generative Language API") || msg.includes("403") || msg.includes("not enabled")) {
+         alert("Google Cloud API Error (403): The 'Generative Language API' is not enabled for your API Key.\n\nPlease create a new key at aistudio.google.com to fix this instantly.");
       } else {
          alert(`Analysis failed: ${msg}. Please try again.`);
       }
