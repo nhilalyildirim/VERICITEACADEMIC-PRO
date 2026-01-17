@@ -21,7 +21,7 @@ export interface Citation {
   status: VerificationStatus;
   confidenceScore: number;
   databaseMatch?: {
-    source: 'Crossref' | 'OpenAlex' | 'None';
+    source: 'Crossref' | 'Google Search' | 'OpenAlex' | 'None';
     doi?: string;
     title?: string;
     url?: string;
