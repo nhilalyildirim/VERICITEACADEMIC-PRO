@@ -17,8 +17,7 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
   }
 
   try {
-    // We use gemini-2.0-flash-exp as it is the current valid experimental model.
-    // The previous 'gemini-2.5' model name was causing 404 errors.
+    // Using gemini-2.0-flash-exp for best balance of speed and reasoning
     const model = "gemini-2.0-flash-exp"; 
     
     const prompt = `
@@ -29,9 +28,10 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
       2. 'title': The full title of the work (article, book, or chapter).
       3. 'author': The first author's last name.
       4. 'year': The year of publication.
+      5. 'doi': The Digital Object Identifier (DOI) if present in the text (e.g., "10.1038/s41586...").
       
       Important: 
-      - If you see a DOI (e.g., 10.1000/xyz), text starting with "http", or "doi.org", include it in the 'original_text' to help verification.
+      - If you see a DOI (e.g., 10.1000/xyz), text starting with "http", or "doi.org", include it in the 'doi' field AND 'original_text'.
       - Do NOT translate titles. Keep them in original language.
       - Return STRICT JSON.
     `;
@@ -52,7 +52,8 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
               original_text: { type: Type.STRING },
               title: { type: Type.STRING },
               author: { type: Type.STRING },
-              year: { type: Type.STRING }
+              year: { type: Type.STRING },
+              doi: { type: Type.STRING }
             }
           }
         }
@@ -75,8 +76,9 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
     if (error.message?.includes("403") || error.message?.includes("API not enabled")) {
         throw new Error("API Configuration Error (403). The 'Generative Language API' is not enabled in your Google Cloud Project. Please enable it.");
     }
+    // If 2.0 fails, it might be an old key or region lock, fallback hint
     if (error.message?.includes("404")) {
-        throw new Error("Model Error (404). The AI model is temporarily unavailable. Please try again later.");
+        throw new Error("Model Unavailable (404). Ensure your API Key supports 'gemini-2.0-flash-exp'.");
     }
 
     throw new Error("Failed to extract citations. " + (error instanceof Error ? error.message : ""));
