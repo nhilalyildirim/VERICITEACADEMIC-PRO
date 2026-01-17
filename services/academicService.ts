@@ -1,180 +1,142 @@
 import { Citation, VerificationStatus } from "../types";
+import { verifyWithGoogleSearch } from "./geminiService";
 
-// Helper: Normalize strings for comparison (remove special chars, lowercase, collapse spaces)
 const normalize = (str: string) => str.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
 
-// Levenshtein distance for fuzzy string matching
+// Levenshtein Distance for typo tolerance
 const getLevenshteinDistance = (a: string, b: string) => {
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
-
   const matrix = [];
-
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
-
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
   for (let i = 1; i <= b.length; i++) {
     for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1, // substitution
-          matrix[i][j - 1] + 1, // insertion
-          matrix[i - 1][j] + 1 // deletion
-        )
-      }
+      if (b.charAt(i - 1) === a.charAt(j - 1)) matrix[i][j] = matrix[i - 1][j - 1];
+      else matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
     }
   }
-
   return matrix[b.length][a.length];
 };
 
-const calculateSimilarity = (s1: string, s2: string): number => {
-  const norm1 = normalize(s1);
-  const norm2 = normalize(s2);
-  const longer = norm1.length > norm2.length ? norm1 : norm2;
+const calcLevenshteinSim = (s1: string, s2: string): number => {
+  const n1 = normalize(s1);
+  const n2 = normalize(s2);
+  const longer = n1.length > n2.length ? n1 : n2;
   if (longer.length === 0) return 1.0;
-  return (longer.length - getLevenshteinDistance(norm1, norm2)) / longer.length;
+  return (longer.length - getLevenshteinDistance(n1, n2)) / longer.length;
 };
 
-/**
- * Queries Crossref API to verify if a citation exists.
- * Implements a robust multi-step verification strategy.
- */
 export const verifyCitationWithCrossref = async (extracted: any): Promise<Citation> => {
-  const extractedTitle = extracted.title || "";
-  const extractedAuthor = extracted.author || "";
-  const extractedDoi = extracted.doi || "";
+  const exTitle = extracted.title || "";
+  const exAuthor = extracted.author || "";
+  const exDoi = extracted.doi || "";
 
-  // Strategy 1: DOI Verification (Most Accurate)
-  if (extractedDoi && extractedDoi.includes('10.')) {
+  // 1. DOI Check (Fastest)
+  if (exDoi && exDoi.includes('10.')) {
      try {
-        const cleanDoi = extractedDoi.match(/10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+/)?.[0];
+        const cleanDoi = exDoi.match(/10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+/)?.[0];
         if (cleanDoi) {
-            const response = await fetch(`https://api.crossref.org/works/${cleanDoi}`);
-            if (response.ok) {
-                const data = await response.json();
-                const item = data.message;
-                return createVerifiedCitation(extracted, item, 100, "Verified directly via DOI.");
+            const res = await fetch(`https://api.crossref.org/works/${cleanDoi}`);
+            if (res.ok) {
+                const data = await res.json();
+                return createVerified(extracted, data.message, 100, "Matched via DOI (Crossref).");
             }
         }
-     } catch (e) {
-         console.warn("DOI lookup failed, falling back to search", e);
-     }
+     } catch (e) { /* ignore */ }
   }
   
-  // Strategy 2: Bibliographic Search
-  if (!extractedTitle || extractedTitle.length < 5) {
-    return createCitation(extracted, VerificationStatus.AMBIGUOUS, 0, "Insufficient metadata for verification.");
+  // 2. Crossref Metadata Search
+  let bestMatch = null;
+  let maxScore = 0;
+
+  if (exTitle.length > 5) {
+      try {
+        const query = `${exTitle} ${exAuthor}`;
+        const response = await fetch(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(query)}&rows=3`);
+        if (response.ok) {
+            const data = await response.json();
+            const items = data.message?.items || [];
+
+            for (const item of items) {
+                const dbTitle = item.title?.[0] || "";
+                const score = calcLevenshteinSim(exTitle, dbTitle);
+                if (score > maxScore) {
+                    maxScore = score;
+                    bestMatch = item;
+                }
+            }
+        }
+      } catch (error) {
+        console.warn("Crossref search failed", error);
+      }
   }
 
-  try {
-    // Search using title + author
-    const query = `${extractedTitle} ${extractedAuthor}`;
-    // Fetch top 5 results to account for ranking issues
-    const response = await fetch(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(query)}&rows=5`);
-    
-    if (!response.ok) throw new Error("Crossref API error");
+  // 3. Evaluation & FALLBACK to Google Search
+  const confidence = Math.min(Math.round(maxScore * 100), 100);
 
-    const data = await response.json();
-    const items = data.message?.items || [];
-
-    if (items.length === 0) {
-      return createCitation(extracted, VerificationStatus.HALLUCINATED, 10, "No records found in Crossref.");
-    }
-
-    // Iterate through top 5 results to find a match
-    let bestMatch = null;
-    let highestScore = 0;
-
-    for (const item of items) {
-        const realTitle = item.title?.[0] || "";
-        const realSubtitle = item.subtitle?.[0] || "";
-        
-        // Calculate similarity with and without subtitle
-        const simFull = calculateSimilarity(extractedTitle, `${realTitle} ${realSubtitle}`);
-        const simMain = calculateSimilarity(extractedTitle, realTitle);
-        const titleScore = Math.max(simFull, simMain);
-
-        // Check Authors
-        let authorMatch = false;
-        if (extractedAuthor && item.author) {
-            const targetAuth = normalize(extractedAuthor);
-            authorMatch = item.author.some((a: any) => {
-                const family = normalize(a.family || "");
-                // Match if target is contained in family name OR family name is contained in target
-                return family.length > 0 && (family.includes(targetAuth) || targetAuth.includes(family)); 
-            });
-        }
-
-        // Scoring Logic
-        let currentScore = titleScore;
-        if (authorMatch) currentScore += 0.25; // Increased boost for author match
-
-        if (currentScore > highestScore) {
-            highestScore = currentScore;
-            bestMatch = item;
-        }
-
-        // Thresholds for "Good Enough" to stop searching
-        // 1. High Title Match (>0.8) - Relaxed from 0.85
-        // 2. Medium Title Match (>0.55) AND Author Match - Relaxed from 0.6
-        if (titleScore > 0.8 || (titleScore > 0.55 && authorMatch)) {
-             return createVerifiedCitation(extracted, item, Math.min(Math.round(currentScore * 100), 99), "Verified via deep metadata search.");
-        }
-    }
-
-    // If loop finishes and we have a decent candidate but not perfect
-    if (bestMatch && highestScore > 0.65) {
-         return createVerifiedCitation(extracted, bestMatch, Math.round(highestScore * 100), "Likely match found with variations.");
-    }
-
-    // If we are here, we found results but none matched closely enough
-    return createCitation(extracted, VerificationStatus.HALLUCINATED, Math.round(highestScore * 100), 
-        `Closest database match "${bestMatch?.title?.[0]}" did not match extracted title.`);
-
-  } catch (error) {
-    console.error("Verification Error", error);
-    return createCitation(extracted, VerificationStatus.AMBIGUOUS, 0, "External verification service unavailable.");
+  if (maxScore > 0.75) {
+      return createVerified(extracted, bestMatch, confidence, "Verified via Crossref.");
   }
+
+  // --- FALLBACK: GOOGLE SEARCH GROUNDING ---
+  // If Crossref score is low, use Gemini with Search tool to prevent False Positives.
+  const searchResult = await verifyWithGoogleSearch(extracted);
+  
+  if (searchResult.verified) {
+      return {
+          id: Math.random().toString(36).substr(2, 9),
+          originalText: extracted.original_text,
+          extractedTitle: extracted.title,
+          extractedAuthor: extracted.author,
+          extractedYear: extracted.year,
+          status: VerificationStatus.VERIFIED,
+          confidenceScore: 90, // High confidence if Google finds it
+          databaseMatch: {
+              source: 'Google Search',
+              title: searchResult.title || extracted.title,
+              url: searchResult.url || '',
+              publishedDate: 'Unknown'
+          },
+          analysisNotes: `Verified via Google Search. ${searchResult.snippet || ''}`
+      };
+  }
+
+  if (maxScore > 0.5) {
+      return createCitation(extracted, VerificationStatus.AMBIGUOUS, confidence, 
+        `Possible match: "${bestMatch?.title?.[0]}". Please verify manually.`);
+  }
+
+  return createCitation(extracted, VerificationStatus.HALLUCINATED, confidence, 
+      "Source not found in Crossref or Google Search.");
 };
 
-// --- Helpers ---
+const createCitation = (ex: any, status: VerificationStatus, score: number, notes: string): Citation => ({
+    id: Math.random().toString(36).substr(2, 9),
+    originalText: ex.original_text,
+    extractedTitle: ex.title,
+    extractedAuthor: ex.author,
+    extractedYear: ex.year,
+    status,
+    confidenceScore: score,
+    databaseMatch: { source: 'None' },
+    analysisNotes: notes
+});
 
-const createCitation = (extracted: any, status: VerificationStatus, confidence: number, notes: string): Citation => {
-    return {
-        id: Math.random().toString(36).substr(2, 9),
-        originalText: extracted.original_text,
-        extractedTitle: extracted.title,
-        extractedAuthor: extracted.author,
-        status,
-        confidenceScore: confidence,
-        databaseMatch: { source: 'None', title: '' },
-        analysisNotes: notes
-    };
-};
-
-const createVerifiedCitation = (extracted: any, item: any, confidence: number, notes: string): Citation => {
-    return {
-        id: Math.random().toString(36).substr(2, 9),
-        originalText: extracted.original_text,
-        extractedTitle: extracted.title,
-        extractedAuthor: extracted.author,
-        status: VerificationStatus.VERIFIED,
-        confidenceScore: confidence,
-        databaseMatch: {
-            source: 'Crossref',
-            doi: item.DOI,
-            title: item.title?.[0],
-            url: item.URL || `https://doi.org/${item.DOI}`,
-            publishedDate: item.created?.['date-parts']?.[0]?.join('-') || 'Unknown'
-        },
-        analysisNotes: notes
-    };
-};
+const createVerified = (ex: any, item: any, score: number, notes: string): Citation => ({
+    id: Math.random().toString(36).substr(2, 9),
+    originalText: ex.original_text,
+    extractedTitle: ex.title,
+    extractedAuthor: ex.author,
+    extractedYear: ex.year,
+    status: VerificationStatus.VERIFIED,
+    confidenceScore: score,
+    databaseMatch: {
+        source: 'Crossref',
+        doi: item.DOI,
+        title: item.title?.[0],
+        url: item.URL || `https://doi.org/${item.DOI}`,
+        publishedDate: item.created?.['date-parts']?.[0]?.join('-') || 'Unknown'
+    },
+    analysisNotes: notes
+});
