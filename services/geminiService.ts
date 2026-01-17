@@ -102,3 +102,52 @@ export const reformatCitation = async (citationData: any, style: string): Promis
     return "Error formatting citation";
   }
 };
+/**
+ * Secondary Verification Layer: Google Search Grounding.
+ * Used when Crossref fails to find a match to prevent false positives.
+ */
+export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified: boolean, title?: string, url?: string, snippet?: string }> => {
+  if (!process.env.API_KEY) return { verified: false };
+
+  try {
+    // Construct a search query based on title and author
+    const query = `"${citation.title}" ${citation.author} academic paper`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview", // Flash 3 supports search grounding
+      contents: `Verify if this academic paper actually exists and was published: ${query}.`,
+      config: {
+        tools: [{ googleSearch: {} }] // This enables the search tool
+      }
+    });
+
+    // Check Grounding Metadata for source URLs
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    
+    if (chunks && chunks.length > 0) {
+        // Look for valid URLs in the grounding chunks that indicate a match
+        const webChunk = chunks.find((c: any) => c.web?.uri);
+        
+        if (webChunk && webChunk.web) {
+            return {
+                verified: true,
+                title: webChunk.web.title,
+                url: webChunk.web.uri,
+                snippet: "Verified via Google Search Grounding"
+            };
+        }
+    }
+    
+    // Fallback: Check if the model explicitly confirmed it in the text
+    const text = response.text?.toLowerCase() || "";
+    if (text.includes("yes") && (text.includes("exists") || text.includes("published"))) {
+         return { verified: true, snippet: "Model confirmed existence via search context." };
+    }
+
+    return { verified: false };
+
+  } catch (error) {
+    console.error("Search verification failed:", error);
+    return { verified: false };
+  }
+};
