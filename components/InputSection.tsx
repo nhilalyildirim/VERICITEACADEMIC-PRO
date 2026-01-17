@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { UploadCloud, FileText, X } from 'lucide-react';
+import { Upload, FileText, X, Search, Loader2 } from 'lucide-react';
+import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Fix for ESM import of pdfjs-dist
+// The module namespace import (* as pdfjsLib) might have the actual library in .default
+// or be flattened depending on the bundler/CDN.
+const pdfjs = (pdfjsLib as any).default || pdfjsLib;
+
+// Initialize PDF Worker
+if (pdfjs.GlobalWorkerOptions) {
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+}
 
 interface InputSectionProps {
   onAnalyze: (text: string) => void;
@@ -11,116 +23,113 @@ interface InputSectionProps {
 export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzing, canUpload, onUpgradeReq }) => {
   const [text, setText] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!canUpload) {
-        onUpgradeReq();
-        return;
-    }
-
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canUpload) { onUpgradeReq(); return; }
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Support for .txt and .md text files
-    if (file.type === 'text/plain' || file.name.endsWith('.md') || file.name.endsWith('.txt')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            if (event.target?.result) {
-                const content = event.target.result as string;
-                setText(content);
-                setFileName(file.name);
-                
-                // Simultaneous Trigger: Immediately analyze the file content
-                if (content.length >= 10) {
-                    onAnalyze(content);
-                }
+    setFileName(file.name);
+    setIsProcessingFile(true);
+
+    try {
+        if (file.name.endsWith('.docx')) {
+            const arrayBuffer = await file.arrayBuffer();
+            // Mammoth usually has extractRawText on the default export or named.
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            setText(result.value);
+        } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+            const arrayBuffer = await file.arrayBuffer();
+            
+            // Use the resolved 'pdfjs' object which has getDocument
+            const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+            const pdf = await loadingTask.promise;
+            
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map((item: any) => item.str).join(' ');
+                fullText += pageText + '\n\n';
             }
-        };
-        reader.readAsText(file);
-    } else {
-        alert("For this version, please upload .txt or .md files. For .pdf or .docx, please copy and paste the bibliography section.");
+            setText(fullText);
+        } else if (file.type === 'text/plain' || file.name.endsWith('.md') || file.name.endsWith('.txt')) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                if (event.target?.result) {
+                    setText(event.target.result as string);
+                }
+            };
+            reader.readAsText(file);
+        } else {
+            alert("Unsupported file type. Please upload .txt, .md, .docx, or .pdf.");
+            setFileName(null);
+            setText('');
+        }
+    } catch (error) {
+        console.error("File processing failed:", error);
+        alert("Failed to read the file. It might be corrupted or password protected.");
+        setFileName(null);
+        setText('');
+    } finally {
+        setIsProcessingFile(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-slate-900 mb-2">Input Academic Text</h2>
-        <p className="text-sm text-slate-500">Paste your bibliography, references, or full academic paper below for verification.</p>
-      </div>
-
-      <div className="relative">
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Paste text here (e.g., 'Smith (2020) argues that...')"
-          className="w-full h-64 p-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none transition-all font-mono text-sm leading-relaxed"
-          disabled={isAnalyzing}
-        />
-        
-        {fileName && (
-            <div className="absolute top-4 right-4 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-medium flex items-center gap-2">
-                <FileText className="w-3 h-3" />
-                {fileName}
-                <button onClick={() => { setFileName(null); setText(''); }} className="hover:text-indigo-900">
-                    <X className="w-3 h-3" />
-                </button>
-            </div>
-        )}
-      </div>
-
-      <div className="mt-6 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="relative">
-             <input
-                type="file"
-                id="file-upload"
-                className="hidden"
-                onChange={handleFileUpload}
-                accept=".txt,.md"
-                disabled={isAnalyzing}
-             />
-             <label 
-                htmlFor="file-upload"
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                    canUpload 
-                    ? 'text-slate-600 bg-slate-100 hover:bg-slate-200' 
-                    : 'text-slate-400 bg-slate-50 cursor-not-allowed'
-                }`}
-                onClick={(e) => {
-                    if (!canUpload) {
-                        e.preventDefault();
-                        onUpgradeReq();
-                    }
-                }}
-             >
-                <UploadCloud className="w-4 h-4" />
-                {canUpload ? 'Upload File (Auto-Analyze)' : 'Upload File (Premium)'}
-             </label>
+    <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-lg font-semibold mb-4">Input Text</h2>
+        <div className="relative mb-4">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={isProcessingFile ? "Reading file..." : "Paste your citations or text here..."}
+            className="w-full h-48 p-4 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y font-mono text-sm"
+            disabled={isAnalyzing || isProcessingFile}
+          />
+          {fileName && (
+              <div className="absolute top-2 right-2 bg-gray-100 px-2 py-1 rounded text-xs flex items-center gap-1 border">
+                  <FileText className="w-3 h-3" />
+                  {fileName}
+                  <button onClick={() => { setFileName(null); setText(''); }}><X className="w-3 h-3 hover:text-red-500" /></button>
+              </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto">
-            <span className="text-xs text-slate-400 hidden md:inline">
-                {text.length} characters
-            </span>
+        <div className="flex justify-between items-center">
+            <div>
+                 <input
+                    type="file"
+                    id="file-upload"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    accept=".txt,.md,.pdf,.docx"
+                    disabled={isAnalyzing || isProcessingFile}
+                 />
+                 <label 
+                    htmlFor="file-upload"
+                    className={`flex items-center gap-2 text-sm cursor-pointer hover:text-blue-600 ${(!canUpload || isAnalyzing || isProcessingFile) ? 'opacity-50 pointer-events-none' : ''}`}
+                    onClick={(e) => { if (!canUpload) { e.preventDefault(); onUpgradeReq(); } }}
+                 >
+                    {isProcessingFile ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                        <Upload className="w-4 h-4" />
+                    )}
+                    {isProcessingFile ? 'Processing...' : (canUpload ? 'Upload .txt, .pdf, .docx' : 'Upload file (Premium)')}
+                 </label>
+            </div>
+
             <button
                 onClick={() => onAnalyze(text)}
-                disabled={isAnalyzing || text.length < 10}
-                className="w-full md:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl font-semibold shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2"
+                disabled={isAnalyzing || isProcessingFile || text.length < 5}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-md font-medium flex items-center gap-2 transition-colors"
             >
-                {isAnalyzing ? (
-                    <>
-                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Scanning & Verifying...
-                    </>
-                ) : (
-                    'Verify Citations'
-                )}
+                {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                {isAnalyzing ? 'Analyzing...' : 'Verify Citations'}
             </button>
         </div>
-      </div>
     </div>
   );
 };
