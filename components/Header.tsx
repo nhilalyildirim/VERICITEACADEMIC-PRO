@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, LogIn, LogOut, Sparkles } from 'lucide-react';
+import { ShieldCheck, LogOut, Sparkles } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {

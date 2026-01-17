@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Check, X, Mail, Loader2, ArrowRight } from 'lucide-react';
+import { Check, X, Loader2 } from 'lucide-react';
 import { PRICING } from '../constants';
 
 interface AuthModalProps {
