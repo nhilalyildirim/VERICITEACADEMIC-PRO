@@ -108,15 +108,14 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
             const targetAuth = normalize(extractedAuthor);
             authorMatch = item.author.some((a: any) => {
                 const family = normalize(a.family || "");
-                const given = normalize(a.given || "");
                 // Match if target is contained in family name OR family name is contained in target
-                return family.includes(targetAuth) || targetAuth.includes(family); 
+                return family.length > 0 && (family.includes(targetAuth) || targetAuth.includes(family)); 
             });
         }
 
         // Scoring Logic
         let currentScore = titleScore;
-        if (authorMatch) currentScore += 0.2; // Boost score if author matches
+        if (authorMatch) currentScore += 0.25; // Increased boost for author match
 
         if (currentScore > highestScore) {
             highestScore = currentScore;
@@ -124,15 +123,15 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
         }
 
         // Thresholds for "Good Enough" to stop searching
-        // 1. High Title Match (>0.85)
-        // 2. Good Title Match (>0.6) AND Author Match
-        if (titleScore > 0.85 || (titleScore > 0.6 && authorMatch)) {
+        // 1. High Title Match (>0.8) - Relaxed from 0.85
+        // 2. Medium Title Match (>0.55) AND Author Match - Relaxed from 0.6
+        if (titleScore > 0.8 || (titleScore > 0.55 && authorMatch)) {
              return createVerifiedCitation(extracted, item, Math.min(Math.round(currentScore * 100), 99), "Verified via deep metadata search.");
         }
     }
 
     // If loop finishes and we have a decent candidate but not perfect
-    if (bestMatch && highestScore > 0.7) {
+    if (bestMatch && highestScore > 0.65) {
          return createVerifiedCitation(extracted, bestMatch, Math.round(highestScore * 100), "Likely match found with variations.");
     }
 

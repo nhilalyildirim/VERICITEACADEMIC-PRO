@@ -97,7 +97,8 @@ export const reformatCitation = async (citationData: any, style: string): Promis
       contents: `Format this academic source into ${style} style. Return ONLY the formatted string, nothing else. Data: ${JSON.stringify(citationData)}`,
     });
     return response.text?.trim() || "Formatting failed";
-  } catch (e) {
+  } catch (error) {
+    console.error("Formatting error", error);
     return "Error formatting citation";
   }
 };
