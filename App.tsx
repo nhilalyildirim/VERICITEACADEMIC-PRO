@@ -145,7 +145,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
+    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans flex flex-col">
       <Header 
         user={user} 
         currentView={view}
@@ -158,9 +158,35 @@ const App: React.FC = () => {
       <main className="container mx-auto px-4 flex-grow">
         {renderContent()}
       </main>
-      <footer className="w-full border-t bg-white py-6 mt-12 text-center text-sm text-gray-500">
-        &copy; 2025 VeriCite. All rights reserved.
+      
+      <footer className="w-full border-t bg-white py-10 mt-16">
+        <div className="max-w-6xl mx-auto px-4 text-center">
+            <p className="text-sm font-semibold text-gray-700 mb-6">
+                &copy; 2025 VeriCite Academic. All rights reserved.
+            </p>
+            
+            <div className="max-w-3xl mx-auto text-xs text-gray-500 space-y-3 leading-relaxed border-t border-gray-100 pt-6">
+                <p>
+                    <strong className="text-gray-600">Disclaimer:</strong> VeriCite Academic utilizes advanced artificial intelligence and database cross-referencing to assist in the verification of academic citations. 
+                    While we strive for the highest possible accuracy, AI models can occasionally produce errors, hallucinations, or false positives. 
+                </p>
+                <p>
+                    This tool is intended strictly as a research aid and is not a substitute for human academic judgment. 
+                    Users are solely responsible for verifying the final accuracy of their citations against original source documents before submission. 
+                    VeriCite bears no responsibility for academic integrity violations, grading outcomes, or publication rejections resulting from the use of this service.
+                </p>
+            </div>
+
+            <div className="flex justify-center gap-6 mt-8 text-xs text-gray-400">
+                <a href="#" className="hover:text-blue-600 transition-colors">Privacy Policy</a>
+                <span className="text-gray-300">|</span>
+                <a href="#" className="hover:text-blue-600 transition-colors">Terms of Service</a>
+                <span className="text-gray-300">|</span>
+                <a href="#" className="hover:text-blue-600 transition-colors">Academic Integrity Guidelines</a>
+            </div>
+        </div>
       </footer>
+
       <AuthModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)}
