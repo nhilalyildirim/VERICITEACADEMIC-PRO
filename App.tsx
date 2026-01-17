@@ -53,6 +53,12 @@ const App: React.FC = () => {
       // Step 1: Extract (Gemini)
       const extractedRaw = await extractCitationsFromText(text);
       
+      if (!extractedRaw || extractedRaw.length === 0) {
+          alert("No citations were found in the text. Please ensure you pasted text containing references.");
+          setIsAnalyzing(false);
+          return;
+      }
+
       // Step 2: Verify (Crossref) - Parallel processing
       const verifiedCitations = await Promise.all(
         extractedRaw.map(async (item) => await verifyCitationWithCrossref(item))
@@ -80,9 +86,14 @@ const App: React.FC = () => {
       setAnalysisCount(prev => prev + 1);
       setView('report');
 
-    } catch (error) {
-      alert("Analysis failed. Please try again. Ensure your API Key is valid.");
+    } catch (error: any) {
       console.error(error);
+      const msg = error?.message || "Unknown error";
+      if (msg.includes("Missing API Key")) {
+         alert("Configuration Error: API Key not found. Please check Vercel Environment Variables and Redeploy.");
+      } else {
+         alert(`Analysis failed: ${msg}. Please try again.`);
+      }
     } finally {
       setIsAnalyzing(false);
     }

@@ -1,8 +1,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Gemini Client
-// In a real production build, ensure process.env.API_KEY is defined in your build pipeline
+// The API key is injected at build time by Vite based on the GEMINI_API_KEY env var in Vercel
 const apiKey = process.env.API_KEY || ''; 
+
+// Validation to help debug Vercel deployment issues
+if (!apiKey) {
+  console.warn("VeriCite Warning: API_KEY is empty. Ensure GEMINI_API_KEY is set in Vercel Environment Variables and the project is Redeployed.");
+}
+
 const ai = new GoogleGenAI({ apiKey });
 
 /**
@@ -13,8 +19,13 @@ const ai = new GoogleGenAI({ apiKey });
 export const extractCitationsFromText = async (text: string): Promise<any[]> => {
   if (!text || text.length < 10) return [];
 
+  if (!apiKey) {
+    throw new Error("Missing API Key. Please configure GEMINI_API_KEY in Vercel settings.");
+  }
+
   try {
-    const model = "gemini-2.5-flash-preview"; 
+    // Using gemini-2.0-flash for best balance of speed, cost, and availability
+    const model = "gemini-2.0-flash"; 
     
     const prompt = `
       You are an academic text parser. Your job is to extract citations and references from the provided text.
@@ -62,7 +73,8 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
 
   } catch (error) {
     console.error("Gemini Extraction Error:", error);
-    throw new Error("Failed to extract citations from text.");
+    // Return a structured error that App.tsx can display
+    throw new Error("Failed to extract citations. " + (error instanceof Error ? error.message : ""));
   }
 };
 
@@ -72,8 +84,10 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
  */
 export const reformatCitation = async (citationData: any, style: string): Promise<string> => {
   try {
+     if (!apiKey) return "Error: Missing API Key";
+
      const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview",
+      model: "gemini-2.0-flash",
       contents: `Format this academic source into ${style} style. Return ONLY the formatted string, nothing else. Data: ${JSON.stringify(citationData)}`,
     });
     return response.text?.trim() || "Formatting failed";
