@@ -25,11 +25,9 @@ const getLevenshteinDistance = (a: string, b: string) => {
       } else {
         matrix[i][j] = Math.min(
           matrix[i - 1][j - 1] + 1, // substitution
-          Math.min(
-            matrix[i][j - 1] + 1, // insertion
-            matrix[i - 1][j] + 1 // deletion
-          )
-        );
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j] + 1 // deletion
+        )
       }
     }
   }
@@ -45,9 +43,11 @@ const calculateSimilarity = (s1: string, s2: string): number => {
 
 /**
  * Queries Crossref API to verify if a citation exists.
+ * Uses 'query.bibliographic' to search across title, author, and container title simultaneously.
  */
 export const verifyCitationWithCrossref = async (extracted: any): Promise<Citation> => {
-  const cleanTitle = extracted.title?.replace(/[^\w\s]/gi, '') || "";
+  const cleanTitle = extracted.title?.replace(/[^\w\s]/gi, '').trim() || "";
+  const cleanAuthor = extracted.author?.replace(/[^\w\s]/gi, '').trim() || "";
   
   if (!cleanTitle || cleanTitle.length < 5) {
     return {
@@ -55,13 +55,15 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
       originalText: extracted.original_text,
       status: VerificationStatus.AMBIGUOUS,
       confidenceScore: 0,
-      analysisNotes: "Insufficient metadata extracted to perform verification.",
+      analysisNotes: "Insufficient metadata extracted (title too short) to perform verification.",
     };
   }
 
   try {
-    // Query Crossref
-    const response = await fetch(`https://api.crossref.org/works?query.title=${encodeURIComponent(cleanTitle)}&rows=3`);
+    // 1. Try to search combined metadata (Author + Title) for better precision
+    // query.bibliographic is much more powerful than query.title
+    const query = `${cleanTitle} ${cleanAuthor}`;
+    const response = await fetch(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(query)}&rows=3`);
     
     if (!response.ok) {
         throw new Error("Crossref API error");
@@ -82,24 +84,44 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
       };
     }
 
-    // Check top match
+    // 2. Check the top result
     const topMatch = items[0];
     const realTitle = topMatch.title?.[0] || "";
-    const similarity = calculateSimilarity(cleanTitle.toLowerCase(), realTitle.toLowerCase());
+    
+    // Normalize strings for comparison
+    const normCleanTitle = cleanTitle.toLowerCase();
+    const normRealTitle = realTitle.replace(/[^\w\s]/gi, '').toLowerCase();
 
-    const isMatch = similarity > 0.65; // Threshold for verification
+    // Calculate similarity
+    const titleSimilarity = calculateSimilarity(normCleanTitle, normRealTitle);
+
+    // Check Author Match (loose)
+    let authorMatch = false;
+    if (cleanAuthor && topMatch.author) {
+        const authName = cleanAuthor.toLowerCase();
+        authorMatch = topMatch.author.some((a: any) => 
+            (a.family && a.family.toLowerCase().includes(authName)) || 
+            (a.given && a.given.toLowerCase().includes(authName))
+        );
+    }
+
+    // Verification Logic:
+    // 1. High title similarity (> 0.6) = VERIFIED (Lowered from 0.65 to be more forgiving of small typos)
+    // 2. Medium title similarity (> 0.4) AND Author Match = VERIFIED (Lowered from 0.45)
+    
+    const isVerified = titleSimilarity > 0.6 || (titleSimilarity > 0.4 && authorMatch);
 
     // Prioritize getting a valid URL
     const sourceUrl = topMatch.URL || topMatch.resource?.primary?.URL || (topMatch.link?.[0]?.URL) || `https://doi.org/${topMatch.DOI}`;
 
-    if (isMatch) {
+    if (isVerified) {
       return {
         id: Math.random().toString(36).substr(2, 9),
         originalText: extracted.original_text,
         extractedTitle: extracted.title,
         extractedAuthor: extracted.author,
         status: VerificationStatus.VERIFIED,
-        confidenceScore: Math.round(similarity * 100),
+        confidenceScore: Math.round(titleSimilarity * 100),
         databaseMatch: {
           source: 'Crossref',
           doi: topMatch.DOI,
@@ -110,18 +132,19 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
         analysisNotes: "Successfully verified against Crossref database.",
       };
     } else {
+       // Close but not close enough?
        return {
         id: Math.random().toString(36).substr(2, 9),
         originalText: extracted.original_text,
         extractedTitle: extracted.title,
         extractedAuthor: extracted.author,
         status: VerificationStatus.HALLUCINATED,
-        confidenceScore: Math.round(similarity * 100),
+        confidenceScore: Math.round(titleSimilarity * 100),
         databaseMatch: {
-            source: 'None', // We found something but it didn't match well enough
-            title: realTitle // Show what we found that was close
+            source: 'None', 
+            title: realTitle // Return what we found so user can see why it failed
         },
-        analysisNotes: `Closest match found ("${realTitle}") does not sufficiently match input. Likely fabricated or significantly errored.`,
+        analysisNotes: `Closest match ("${realTitle}") does not sufficiently match input title/author.`,
       };
     }
 
@@ -132,7 +155,7 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
       originalText: extracted.original_text,
       status: VerificationStatus.AMBIGUOUS,
       confidenceScore: 0,
-      analysisNotes: "Verification service temporarily unavailable.",
+      analysisNotes: "Verification service temporarily unavailable or network error.",
     };
   }
 };
