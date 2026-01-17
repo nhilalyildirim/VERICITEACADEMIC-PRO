@@ -6,49 +6,31 @@ import { Dashboard } from './components/Dashboard';
 import { AuthModal } from './components/AuthModal';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationWithCrossref } from './services/academicService';
-import { User, AnalysisReport, VerificationStatus } from './types';
+import { User, AnalysisReport, VerificationStatus, Citation } from './types';
 import { MAX_FREE_ANALYSIS } from './constants';
 
 const App: React.FC = () => {
-  // State
   const [user, setUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'upgrade'>('login');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  
-  // Navigation & Data State
   const [view, setView] = useState<'home' | 'dashboard' | 'report'>('home');
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
   const [analysisCount, setAnalysisCount] = useState(0);
 
-  // Handlers
   const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade') => {
-    // Mock User Creation / Retrieval
     const mockUser: User = { 
-        id: mode === 'register' ? `new_${Date.now()}` : 'u123', 
+        id: 'u1', 
         isPremium: mode === 'upgrade', 
         analysisCount: 0 
     };
-    
     setUser(mockUser);
     setIsAuthModalOpen(false);
-    
-    // If upgrading, stay on current view but refresh state. 
-    // If login/register, go to dashboard.
-    if (mode !== 'upgrade') {
-        setView('dashboard');
-    }
-  };
-
-  const handleLogout = () => {
-      setUser(null);
-      setView('home');
-      setHistory([]); // Clear session history on logout for privacy in this demo
+    if (mode !== 'upgrade') setView('dashboard');
   };
 
   const handleAnalysis = async (text: string) => {
-    // Check Limits
     if (!user && analysisCount >= MAX_FREE_ANALYSIS) {
       setAuthMode('upgrade');
       setIsAuthModalOpen(true);
@@ -59,31 +41,43 @@ const App: React.FC = () => {
     setCurrentReport(null);
 
     try {
-      // Step 1: Extract (Gemini)
+      // 1. Extract Citations
       const extractedRaw = await extractCitationsFromText(text);
-      
       if (!extractedRaw || extractedRaw.length === 0) {
-          alert("No citations were found in the text. Please ensure you pasted text containing references.");
+          alert("No citations found.");
           setIsAnalyzing(false);
           return;
       }
 
-      // Step 2: Verify (Crossref) - Parallel processing
-      const verifiedCitations = await Promise.all(
-        extractedRaw.map(async (item) => await verifyCitationWithCrossref(item))
-      );
+      // 2. Verify Citations (Batched)
+      // We verify in chunks of 3 to avoid hitting API Rate Limits (429)
+      const BATCH_SIZE = 3;
+      const verifiedCitations: Citation[] = [];
 
-      // Step 3: Calculate Metrics
+      for (let i = 0; i < extractedRaw.length; i += BATCH_SIZE) {
+          const chunk = extractedRaw.slice(i, i + BATCH_SIZE);
+          
+          // Process current chunk in parallel
+          const chunkResults = await Promise.all(
+              chunk.map((item: any) => verifyCitationWithCrossref(item))
+          );
+          
+          verifiedCitations.push(...chunkResults);
+
+          // Add a small delay between chunks if there are more items to process
+          if (i + BATCH_SIZE < extractedRaw.length) {
+              await new Promise(resolve => setTimeout(resolve, 1500));
+          }
+      }
+
       const verifiedCount = verifiedCitations.filter(c => c.status === VerificationStatus.VERIFIED).length;
       const hallucinatedCount = verifiedCitations.filter(c => c.status === VerificationStatus.HALLUCINATED).length;
-      const total = verifiedCitations.length;
-      
-      const score = total === 0 ? 0 : Math.round((verifiedCount / total) * 100);
+      const score = verifiedCitations.length === 0 ? 0 : Math.round((verifiedCount / verifiedCitations.length) * 100);
 
       const newReport: AnalysisReport = {
-        id: `RPT-${Date.now().toString(36).toUpperCase()}`,
+        id: `RPT-${Math.floor(Math.random()*10000)}`,
         timestamp: Date.now(),
-        totalCitations: total,
+        totalCitations: verifiedCitations.length,
         verifiedCount,
         hallucinatedCount,
         overallTrustScore: score,
@@ -91,21 +85,13 @@ const App: React.FC = () => {
       };
 
       setCurrentReport(newReport);
-      setHistory(prev => [newReport, ...prev]); // Add to history
+      setHistory(prev => [newReport, ...prev]);
       setAnalysisCount(prev => prev + 1);
       setView('report');
 
     } catch (error: any) {
-      console.error("Full Analysis Error:", error);
-      const msg = error?.message || error?.toString() || "Unknown error";
-      
-      if (msg.includes("Missing API Key")) {
-         alert("Configuration Error: API Key not found. Please check Vercel Environment Variables and Redeploy.");
-      } else if (msg.includes("Generative Language API") || msg.includes("403") || msg.includes("not enabled")) {
-         alert("Google Cloud API Error (403): The 'Generative Language API' is not enabled for your API Key.\n\nPlease create a new key at aistudio.google.com to fix this instantly.");
-      } else {
-         alert(`Analysis failed: ${msg}. Please try again.`);
-      }
+       console.error(error);
+       alert(`Analysis failed: ${error.message || 'Unknown error'}. Please try again.`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -115,38 +101,24 @@ const App: React.FC = () => {
       switch(view) {
           case 'dashboard':
               return user ? (
-                  <Dashboard 
-                    user={user} 
-                    history={history} 
-                    onNavigateHome={() => setView('home')}
-                    onViewReport={(rpt) => { setCurrentReport(rpt); setView('report'); }}
-                  />
-              ) : (
-                  // Fallback if accessed without auth (shouldn't happen via UI)
-                 <div className="text-center py-20">Please log in to view dashboard.</div>
-              );
+                  <Dashboard user={user} history={history} onNavigateHome={() => setView('home')} onViewReport={(r) => { setCurrentReport(r); setView('report'); }} />
+              ) : <div className="text-center p-8">Please login to view dashboard.</div>;
           case 'report':
               return currentReport ? (
-                  <AnalysisReportView 
-                    report={currentReport} 
-                    onReset={() => setView('home')} 
-                  />
-              ) : <div>No report selected</div>;
+                  <AnalysisReportView report={currentReport} onReset={() => setView('home')} />
+              ) : <div>No report</div>;
           case 'home':
           default:
               return (
-                <div className="space-y-8 animate-in fade-in duration-700">
-                    <div className="text-center space-y-4 max-w-2xl mx-auto">
-                        <h1 className="text-4xl font-bold tracking-tight text-slate-900">
-                            Verify Academic Integrity <br/>
-                            <span className="text-indigo-600">In Seconds</span>
+                <div className="max-w-4xl mx-auto py-12">
+                    <div className="text-center mb-10">
+                        <h1 className="text-4xl font-bold text-gray-900 mb-4">
+                            VeriCite Academic
                         </h1>
-                        <p className="text-lg text-slate-600">
-                            Detect AI hallucinations and verify citations against the Crossref academic database. 
-                            Professional grade accuracy for students and researchers.
+                        <p className="text-lg text-gray-600">
+                            Verify citations, detect AI hallucinations, and check source integrity.
                         </p>
                     </div>
-                    
                     <InputSection 
                         onAnalyze={handleAnalysis} 
                         isAnalyzing={isAnalyzing}
@@ -159,34 +131,22 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-12 flex flex-col">
+    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
       <Header 
         user={user} 
         currentView={view}
         onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} 
         onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
-        onLogout={handleLogout}
-        onNavigate={(v) => setView(v)}
+        onLogout={() => { setUser(null); setView('home'); }}
+        onNavigate={setView}
         onPricingClick={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }}
       />
-
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 flex-grow w-full">
+      <main className="container mx-auto px-4 flex-grow">
         {renderContent()}
       </main>
-
-      <footer className="w-full bg-slate-100 border-t border-slate-200 py-6 mt-12 text-center z-40 no-print">
-        <div className="max-w-4xl mx-auto px-4">
-            <p className="text-xs text-slate-500 leading-relaxed">
-                DISCLAIMER: VeriCite Academic is an advanced research verification tool utilizing artificial intelligence and third-party academic databases (Crossref). 
-                While we strive for maximum accuracy, this tool is intended to assist, not replace, human judgment. 
-                Results may contain errors or omissions. Users are solely responsible for independently verifying the accuracy of all generated reports, citations, and content before use in academic work.
-            </p>
-            <p className="text-xs text-slate-400 mt-2">
-                © {new Date().getFullYear()} VeriCite Academic. All rights reserved.
-            </p>
-        </div>
+      <footer className="w-full border-t bg-white py-6 mt-12 text-center text-sm text-gray-500">
+        &copy; 2025 VeriCite. All rights reserved.
       </footer>
-
       <AuthModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)}
