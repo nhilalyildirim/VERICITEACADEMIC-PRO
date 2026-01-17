@@ -1,0 +1,5 @@
+{
+  "name": "VeriCite Academic",
+  "description": "Professional academic citation verification platform detecting AI hallucinations using Real-time Crossref Data and Gemini AI.",
+  "requestFramePermissions": []
+}
