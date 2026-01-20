@@ -5,6 +5,8 @@
  * Updated to use direct plaintext comparison for specific admin credentials.
  */
 
+import { db } from './database';
+
 const ADMIN_USER = "NHYA";
 const ADMIN_PASSWORD = "239486*";
 const SESSION_KEY = "vericite_admin_token";
@@ -22,8 +24,14 @@ export const authService = {
             // Generate a mock session token
             const token = `tok_${Date.now()}_${Math.random().toString(36).substr(2)}`;
             localStorage.setItem(SESSION_KEY, token);
+            
+            // Log successful login to real DB
+            db.logEvent('INFO', 'Admin logged in successfully.');
             return true;
         }
+        
+        // Log failed attempt
+        db.logEvent('WARN', `Admin login failed. Username attempted: ${username}`);
         return false;
     },
 
@@ -40,6 +48,7 @@ export const authService = {
      * Clear session.
      */
     logout: () => {
+        db.logEvent('INFO', 'Admin logged out.');
         localStorage.removeItem(SESSION_KEY);
     }
 };

@@ -6,13 +6,14 @@ import { Dashboard } from './components/Dashboard';
 import { AuthModal } from './components/AuthModal';
 import { SupportPage } from './components/SupportPage';
 import { PricingPage } from './components/PricingPage';
-import { AdminPanel } from './components/AdminPanel'; // This is now the Admin Router
+import { AdminPanel } from './components/AdminPanel';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationWithCrossref } from './services/academicService';
 import { storageService, INACTIVITY_LIMIT_MS } from './services/storageService';
+import { db } from './services/database'; // Import real DB
 import { User, AnalysisReport, VerificationStatus, Citation } from './types';
 import { MAX_FREE_ANALYSIS } from './constants';
 
@@ -36,8 +37,6 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => storageService.getUserSession());
   
   // Initialize Analysis Count
-  // If user is logged in, usage should ideally come from backend (mocked here via user object).
-  // If guest, usage comes from persistent guest storage.
   const [analysisCount, setAnalysisCount] = useState<number>(() => {
     const sessionUser = storageService.getUserSession();
     if (sessionUser) return sessionUser.analysisCount;
@@ -58,27 +57,18 @@ const App: React.FC = () => {
 
   // --- SESSION MANAGEMENT (INACTIVITY TIMEOUT) ---
   useEffect(() => {
-    // Only track activity if a user is logged in
     if (!user) return;
-
     const checkInactivity = () => {
       const lastActive = storageService.getLastActiveTime();
       if (lastActive > 0 && Date.now() - lastActive > INACTIVITY_LIMIT_MS) {
         handleLogout();
       }
     };
-
-    const updateActivity = () => {
-      storageService.updateLastActive();
-    };
-
-    // Listen for user activity
+    const updateActivity = () => storageService.updateLastActive();
     window.addEventListener('mousemove', updateActivity);
     window.addEventListener('keydown', updateActivity);
     window.addEventListener('click', updateActivity);
-    
-    // Check for timeout periodically
-    const interval = setInterval(checkInactivity, 60000); // Check every minute
+    const interval = setInterval(checkInactivity, 60000);
 
     return () => {
       window.removeEventListener('mousemove', updateActivity);
@@ -88,13 +78,12 @@ const App: React.FC = () => {
     };
   }, [user]);
 
-
   // --- PUBLIC APP LOGIC ---
 
   const handleLogout = () => {
+      if (user) db.logEvent('INFO', `User logged out: ${user.id}`);
       storageService.clearSession();
       setUser(null);
-      // Revert to guest usage count
       setAnalysisCount(storageService.getGuestUsage());
       setView('home');
   };
@@ -107,13 +96,18 @@ const App: React.FC = () => {
         return;
     }
 
-    // Mock Login - In production this comes from backend
-    // Merge guest usage into account if we wanted, but for now reset or load user's profile
+    // Generate or retrieve user
+    // In a real backend, this would return the existing user from DB
+    const userId = 'u_' + Math.random().toString(36).substr(2, 5);
     const mockUser: User = { 
-        id: 'u1', 
+        id: userId, 
         isPremium: false, 
-        analysisCount: 0 // In real app, load this from DB
+        analysisCount: 0 
     };
+
+    // Ensure User exists in Real DB
+    db.ensureUser(mockUser, 'user@example.com');
+    db.logEvent('INFO', `User logged in: ${userId}`);
 
     storageService.saveUserSession(mockUser, rememberMe);
     setUser(mockUser);
@@ -125,24 +119,26 @@ const App: React.FC = () => {
       if (user) {
           const updatedUser = { ...user, isPremium: true };
           setUser(updatedUser);
-          // Persist the upgrade
-          // In a real app we'd need to know if rememberMe was used to pick correct storage,
-          // but storageService handles updating whichever exists.
-          // For simplicity here we just re-save to currently active session storage type
+          
+          // Update Real DB
+          db.ensureUser(updatedUser);
+          db.logEvent('INFO', `User upgraded to Premium: ${user.id}`);
+
           const isLocal = !!localStorage.getItem('vericite_user_session_v1');
           storageService.saveUserSession(updatedUser, isLocal);
           
           alert("Successfully upgraded to Pro!");
           setView('dashboard');
       } else {
-           const mockUser: User = { 
-            id: 'u1-pro', 
-            isPremium: true, 
-            analysisCount: 0 
-            };
-            setUser(mockUser);
-            storageService.saveUserSession(mockUser, false);
-            setView('dashboard');
+           const userId = 'u_pro_' + Date.now();
+           const mockUser: User = { id: userId, isPremium: true, analysisCount: 0 };
+           
+           db.ensureUser(mockUser);
+           db.logEvent('INFO', `New Pro User created: ${userId}`);
+
+           setUser(mockUser);
+           storageService.saveUserSession(mockUser, false);
+           setView('dashboard');
       }
   };
 
@@ -197,7 +193,7 @@ const App: React.FC = () => {
       const score = verifiedCitations.length === 0 ? 0 : Math.round((verifiedCount / verifiedCitations.length) * 100);
 
       const newReport: AnalysisReport = {
-        id: `RPT-${Math.floor(Math.random()*10000)}`,
+        id: `RPT-${Math.floor(Math.random()*100000)}`,
         timestamp: Date.now(),
         totalCitations: verifiedCitations.length,
         verifiedCount,
@@ -206,18 +202,22 @@ const App: React.FC = () => {
         citations: verifiedCitations
       };
 
-      // --- PERSISTENCE UPDATE ---
+      // --- PERSISTENCE & DB UPDATE ---
       const newCount = analysisCount + 1;
       setAnalysisCount(newCount);
       
+      const userId = user ? user.id : 'guest';
+      
+      // WRITE TO REAL DB
+      db.recordAnalysis(newReport, userId);
+      db.logEvent('INFO', `Analysis completed. ID: ${newReport.id} Score: ${score}`);
+
       if (user) {
-          // Update User Session
           const updatedUser = { ...user, analysisCount: newCount };
           setUser(updatedUser);
           const isLocal = !!localStorage.getItem('vericite_user_session_v1');
           storageService.saveUserSession(updatedUser, isLocal);
       } else {
-          // Update Guest Usage
           storageService.saveGuestUsage(newCount);
       }
       // --------------------------
@@ -228,6 +228,7 @@ const App: React.FC = () => {
 
     } catch (error: any) {
        console.error(error);
+       db.logEvent('ERROR', `Analysis failed: ${error.message}`);
        alert(`Analysis failed: ${error.message || 'Unknown error'}. Please try again.`);
     } finally {
       setIsAnalyzing(false);
@@ -298,19 +299,6 @@ const App: React.FC = () => {
               <p className="text-sm font-semibold text-gray-700 mb-6">
                   &copy; 2026 VeriCite Academic. All rights reserved.
               </p>
-              
-              <div className="max-w-3xl mx-auto text-xs text-gray-500 space-y-3 leading-relaxed border-t border-gray-100 pt-6">
-                  <p>
-                      <strong className="text-gray-600">Disclaimer:</strong> VeriCite Academic utilizes advanced artificial intelligence and database cross-referencing to assist in the verification of academic citations. 
-                      While we strive for the highest possible accuracy, AI models can occasionally produce errors, hallucinations, or false positives. 
-                  </p>
-                  <p>
-                      This tool is intended strictly as a research aid and is not a substitute for human academic judgment. 
-                      Users are solely responsible for verifying the final accuracy of their citations against original source documents before submission. 
-                      VeriCite bears no responsibility for academic integrity violations, grading outcomes, or publication rejections resulting from the use of this service.
-                  </p>
-              </div>
-
               <div className="flex flex-wrap justify-center gap-6 mt-8 text-xs text-gray-400">
                   <button onClick={() => setView('privacy')} className="hover:text-blue-600 transition-colors">Privacy Policy</button>
                   <span className="text-gray-300">|</span>
