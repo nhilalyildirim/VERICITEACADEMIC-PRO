@@ -7,17 +7,18 @@ import { AuthModal } from './components/AuthModal';
 import { SupportPage } from './components/SupportPage';
 import { PricingPage } from './components/PricingPage';
 import { AdminPanel } from './components/AdminPanel';
+import { BillingPage } from './components/BillingPage'; // New Import
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationWithCrossref } from './services/academicService';
 import { storageService, INACTIVITY_LIMIT_MS } from './services/storageService';
-import { db } from './services/database'; // Import real DB
+import { db } from './services/database'; 
 import { User, AnalysisReport, VerificationStatus, Citation } from './types';
 import { MAX_FREE_ANALYSIS } from './constants';
 
-type ViewType = 'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'privacy' | 'terms' | 'integrity';
+type ViewType = 'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billing' | 'privacy' | 'terms' | 'integrity';
 
 const App: React.FC = () => {
   // ROUTING LOGIC
@@ -33,10 +34,8 @@ const App: React.FC = () => {
 
   // --- STATE WITH PERSISTENCE INITIALIZATION ---
   
-  // Initialize User from Session/Local Storage
   const [user, setUser] = useState<User | null>(() => storageService.getUserSession());
   
-  // Initialize Analysis Count
   const [analysisCount, setAnalysisCount] = useState<number>(() => {
     const sessionUser = storageService.getUserSession();
     if (sessionUser) return sessionUser.analysisCount;
@@ -50,12 +49,11 @@ const App: React.FC = () => {
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
 
-  // If we are in the admin route, strictly render only the Admin Panel
   if (isAdminRoute) {
       return <AdminPanel />;
   }
 
-  // --- SESSION MANAGEMENT (INACTIVITY TIMEOUT) ---
+  // --- SESSION MANAGEMENT ---
   useEffect(() => {
     if (!user) return;
     const checkInactivity = () => {
@@ -96,8 +94,6 @@ const App: React.FC = () => {
         return;
     }
 
-    // Generate or retrieve user
-    // In a real backend, this would return the existing user from DB
     const userId = 'u_' + Math.random().toString(36).substr(2, 5);
     const mockUser: User = { 
         id: userId, 
@@ -105,7 +101,6 @@ const App: React.FC = () => {
         analysisCount: 0 
     };
 
-    // Ensure User exists in Real DB
     db.ensureUser(mockUser, 'user@example.com');
     db.logEvent('INFO', `User logged in: ${userId}`);
 
@@ -120,25 +115,26 @@ const App: React.FC = () => {
           const updatedUser = { ...user, isPremium: true };
           setUser(updatedUser);
           
-          // Update Real DB
           db.ensureUser(updatedUser);
+          db.createInvoice(user.id, 14.99); // Generate persistent invoice
           db.logEvent('INFO', `User upgraded to Premium: ${user.id}`);
 
           const isLocal = !!localStorage.getItem('vericite_user_session_v1');
           storageService.saveUserSession(updatedUser, isLocal);
           
           alert("Successfully upgraded to Pro!");
-          setView('dashboard');
+          setView('billing'); // Redirect to billing to see invoice
       } else {
            const userId = 'u_pro_' + Date.now();
            const mockUser: User = { id: userId, isPremium: true, analysisCount: 0 };
            
            db.ensureUser(mockUser);
+           db.createInvoice(mockUser.id, 14.99); // Generate persistent invoice
            db.logEvent('INFO', `New Pro User created: ${userId}`);
 
            setUser(mockUser);
            storageService.saveUserSession(mockUser, false);
-           setView('dashboard');
+           setView('billing');
       }
   };
 
@@ -202,13 +198,11 @@ const App: React.FC = () => {
         citations: verifiedCitations
       };
 
-      // --- PERSISTENCE & DB UPDATE ---
       const newCount = analysisCount + 1;
       setAnalysisCount(newCount);
       
       const userId = user ? user.id : 'guest';
       
-      // WRITE TO REAL DB
       db.recordAnalysis(newReport, userId);
       db.logEvent('INFO', `Analysis completed. ID: ${newReport.id} Score: ${score}`);
 
@@ -220,7 +214,6 @@ const App: React.FC = () => {
       } else {
           storageService.saveGuestUsage(newCount);
       }
-      // --------------------------
 
       setCurrentReport(newReport);
       setHistory(prev => [newReport, ...prev]);
@@ -239,6 +232,14 @@ const App: React.FC = () => {
       switch(view) {
           case 'pricing':
               return <PricingPage onBack={() => setView('home')} onSubscribeSuccess={handleSubscriptionSuccess} />;
+          case 'billing':
+              return user ? (
+                  <BillingPage 
+                    user={user} 
+                    invoices={db.getUserInvoices(user.id)} 
+                    onBack={() => setView('dashboard')} 
+                  />
+              ) : <div className="text-center p-8">Please login to view billing details.</div>;
           case 'support':
               return <SupportPage onBack={() => setView('home')} />;
           case 'privacy':

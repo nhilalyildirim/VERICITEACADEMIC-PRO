@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, HelpCircle } from 'lucide-react';
+import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, HelpCircle, CreditCard, Gem } from 'lucide-react';
 import { User as UserType } from '../types';
 import { MAX_FREE_ANALYSIS } from '../constants';
 
@@ -48,6 +48,12 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
                  </button>
              )}
              <button 
+                onClick={() => onNavigate('pricing')} 
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'pricing' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+             >
+                <Gem className="w-4 h-4" /> Pricing
+             </button>
+             <button 
                 onClick={() => onNavigate('support')} 
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'support' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
              >
@@ -66,17 +72,25 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
              )}
 
              {user ? (
-                 <div className="flex items-center gap-4 pl-4 border-l border-slate-700">
+                 <div className="flex items-center gap-3 pl-4 border-l border-slate-700">
                      <div 
-                        className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={onPricingClick}
-                        title="View Plan Details"
+                        className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity mr-2"
+                        title="Current Plan"
                      >
                         <div className="text-xs text-slate-400">Plan</div>
                         <div className="text-xs font-bold text-white flex items-center gap-1">
                             {user.isPremium ? <span className="text-amber-400 flex items-center gap-1"><Zap className="w-3 h-3 fill-current" /> Premium</span> : 'Free Tier'}
                         </div>
                      </div>
+                     
+                     <button 
+                        onClick={() => onNavigate('billing')}
+                        className={`p-2 rounded-full transition-colors ${currentView === 'billing' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                        title="Billing & Payments"
+                     >
+                         <CreditCard className="w-5 h-5" />
+                     </button>
+                     
                      <button 
                         onClick={onLogout}
                         className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"

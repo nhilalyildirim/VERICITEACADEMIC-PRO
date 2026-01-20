@@ -28,10 +28,19 @@ export interface DbLog {
     message: string;
 }
 
+export interface DbInvoice {
+    id: string;
+    userId: string;
+    date: number;
+    amount: number;
+    status: 'Paid' | 'Pending' | 'Failed' | 'Refunded';
+}
+
 interface DatabaseSchema {
     users: DbUser[];
     analyses: DbAnalysis[];
     logs: DbLog[];
+    invoices: DbInvoice[];
 }
 
 // Seed data to ensure the admin panel isn't completely empty initially
@@ -48,6 +57,10 @@ const SEED_DATA: DatabaseSchema = {
     logs: [
         { id: 'l1', timestamp: Date.now() - 1000000, level: 'INFO', message: 'System initialized' },
         { id: 'l2', timestamp: Date.now() - 50000, level: 'INFO', message: 'Database migration applied' }
+    ],
+    invoices: [
+        { id: 'inv_demo_1', userId: 'u_demo_2', date: Date.now() - 2600000000, amount: 14.99, status: 'Paid' },
+        { id: 'inv_demo_2', userId: 'u_demo_2', date: Date.now() - 5000000, amount: 14.99, status: 'Paid' }
     ]
 };
 
@@ -59,6 +72,7 @@ class DatabaseService {
         if (raw) {
             try {
                 this.db = JSON.parse(raw);
+                if (!this.db.invoices) this.db.invoices = []; // Migration safety
             } catch {
                 this.db = SEED_DATA;
                 this.save();
@@ -104,6 +118,10 @@ class DatabaseService {
     getRecentLogs(limit = 10): DbLog[] {
         return [...this.db.logs].sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
     }
+    
+    getUserInvoices(userId: string): DbInvoice[] {
+        return (this.db.invoices || []).filter(i => i.userId === userId).sort((a, b) => b.date - a.date);
+    }
 
     // --- WRITES ---
 
@@ -145,6 +163,20 @@ class DatabaseService {
         }
 
         this.save();
+    }
+    
+    createInvoice(userId: string, amount: number) {
+        const invoice: DbInvoice = {
+            id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            userId,
+            date: Date.now(),
+            amount,
+            status: 'Paid'
+        };
+        if (!this.db.invoices) this.db.invoices = [];
+        this.db.invoices.push(invoice);
+        this.save();
+        return invoice;
     }
 
     logEvent(level: 'INFO' | 'WARN' | 'ERROR', message: string) {
