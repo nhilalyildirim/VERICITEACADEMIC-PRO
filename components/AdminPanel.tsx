@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Users, Activity, UploadCloud, DollarSign, LogOut, AlertTriangle, FileText, Server } from 'lucide-react';
+import { Lock, Users, Activity, UploadCloud, DollarSign, LogOut, AlertTriangle, Server } from 'lucide-react';
 import { authService } from '../services/authService';
 
 /**
