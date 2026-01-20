@@ -210,7 +210,7 @@ class DatabaseService {
         if (!this.db.invoices) this.db.invoices = [];
         this.db.invoices.push(invoice);
 
-        this.logEvent('INFO', `Subscription activated for ${userId}. Invoice ${invoice.id} generated.`);
+        this.logEvent('INFO', `Subscription activated for ${userId} [Plan: ${planId}]. Invoice ${invoice.id} generated.`);
         this.save();
         return user;
     }
