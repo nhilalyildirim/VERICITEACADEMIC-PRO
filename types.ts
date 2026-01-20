@@ -1,3 +1,4 @@
+
 export enum VerificationStatus {
   VERIFIED = 'VERIFIED',
   HALLUCINATED = 'HALLUCINATED',
@@ -11,6 +12,8 @@ export enum CitationStyle {
   CHICAGO = 'Chicago',
   HARVARD = 'Harvard'
 }
+
+export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'trialing' | 'paused' | 'incomplete' | 'none';
 
 export interface Citation {
   id: string;
@@ -44,4 +47,12 @@ export interface User {
   id: string;
   isPremium: boolean;
   analysisCount: number;
+  // Paddle-ready Subscription Fields
+  subscriptionId?: string;
+  customerId?: string;
+  subscriptionStatus: SubscriptionStatus;
+  planType?: 'free' | 'pro_monthly';
+  currentPeriodStart?: number;
+  currentPeriodEnd?: number;
+  cancelAtPeriodEnd?: boolean;
 }

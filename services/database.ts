@@ -1,4 +1,4 @@
-import { AnalysisReport, User } from '../types';
+import { AnalysisReport, User, SubscriptionStatus } from '../types';
 
 const DB_KEY = 'vericite_core_db_v1';
 
@@ -9,6 +9,14 @@ export interface DbUser {
     joinedAt: number;
     lastLogin: number;
     analysisCount: number;
+    // Subscription Data
+    subscriptionId?: string;
+    customerId?: string;
+    subscriptionStatus: SubscriptionStatus;
+    planType?: 'free' | 'pro_monthly';
+    currentPeriodStart?: number;
+    currentPeriodEnd?: number;
+    cancelAtPeriodEnd?: boolean;
 }
 
 export interface DbAnalysis {
@@ -34,6 +42,8 @@ export interface DbInvoice {
     date: number;
     amount: number;
     status: 'Paid' | 'Pending' | 'Failed' | 'Refunded';
+    billingPeriodStart: number;
+    billingPeriodEnd: number;
 }
 
 interface DatabaseSchema {
@@ -43,11 +53,18 @@ interface DatabaseSchema {
     invoices: DbInvoice[];
 }
 
-// Seed data to ensure the admin panel isn't completely empty initially
+// Seed data
 const SEED_DATA: DatabaseSchema = {
     users: [
-        { id: 'u_demo_1', email: 'student@university.edu', isPremium: false, joinedAt: Date.now() - 5000000, lastLogin: Date.now() - 100000, analysisCount: 12 },
-        { id: 'u_demo_2', email: 'researcher@lab.org', isPremium: true, joinedAt: Date.now() - 2000000, lastLogin: Date.now() - 50000, analysisCount: 45 }
+        { 
+            id: 'u_demo_1', email: 'student@university.edu', isPremium: false, joinedAt: Date.now() - 5000000, lastLogin: Date.now() - 100000, analysisCount: 12,
+            subscriptionStatus: 'none'
+        },
+        { 
+            id: 'u_demo_2', email: 'researcher@lab.org', isPremium: true, joinedAt: Date.now() - 2000000, lastLogin: Date.now() - 50000, analysisCount: 45,
+            subscriptionStatus: 'active', subscriptionId: 'sub_seed_123', planType: 'pro_monthly',
+            currentPeriodStart: Date.now() - 1000000, currentPeriodEnd: Date.now() + 2000000
+        }
     ],
     analyses: [
         { id: 'RPT-SEED-1', userId: 'u_demo_1', timestamp: Date.now() - 100000, trustScore: 92, citationCount: 15, verifiedCount: 14, hallucinatedCount: 0 },
@@ -55,12 +72,11 @@ const SEED_DATA: DatabaseSchema = {
         { id: 'RPT-SEED-3', userId: 'u_demo_2', timestamp: Date.now() - 40000, trustScore: 100, citationCount: 22, verifiedCount: 22, hallucinatedCount: 0 }
     ],
     logs: [
-        { id: 'l1', timestamp: Date.now() - 1000000, level: 'INFO', message: 'System initialized' },
-        { id: 'l2', timestamp: Date.now() - 50000, level: 'INFO', message: 'Database migration applied' }
+        { id: 'l1', timestamp: Date.now() - 1000000, level: 'INFO', message: 'System initialized' }
     ],
     invoices: [
-        { id: 'inv_demo_1', userId: 'u_demo_2', date: Date.now() - 2600000000, amount: 14.99, status: 'Paid' },
-        { id: 'inv_demo_2', userId: 'u_demo_2', date: Date.now() - 5000000, amount: 14.99, status: 'Paid' }
+        { id: 'inv_demo_1', userId: 'u_demo_2', date: Date.now() - 2600000000, amount: 14.99, status: 'Paid', billingPeriodStart: Date.now() - 2600000000, billingPeriodEnd: Date.now() - 50000 },
+        { id: 'inv_demo_2', userId: 'u_demo_2', date: Date.now() - 5000000, amount: 14.99, status: 'Paid', billingPeriodStart: Date.now() - 5000000, billingPeriodEnd: Date.now() + 2000000 }
     ]
 };
 
@@ -72,7 +88,7 @@ class DatabaseService {
         if (raw) {
             try {
                 this.db = JSON.parse(raw);
-                if (!this.db.invoices) this.db.invoices = []; // Migration safety
+                if (!this.db.invoices) this.db.invoices = [];
             } catch {
                 this.db = SEED_DATA;
                 this.save();
@@ -87,28 +103,21 @@ class DatabaseService {
         localStorage.setItem(DB_KEY, JSON.stringify(this.db));
     }
 
-    // --- METRICS & READS ---
+    // --- READS ---
+
+    getUser(userId: string): DbUser | undefined {
+        return this.db.users.find(u => u.id === userId);
+    }
 
     getDashboardStats() {
         const totalUsers = this.db.users.length;
         const totalAnalyses = this.db.analyses.length;
         const premiumUsers = this.db.users.filter(u => u.isPremium).length;
         const freeUsers = totalUsers - premiumUsers;
-        
-        // Calculate mock revenue based on premium users * $14.99
         const revenue = premiumUsers * 14.99;
-
-        // Calculate file uploads (approximated from analyses for demo purposes)
         const fileUploads = Math.floor(totalAnalyses * 0.4); 
 
-        return {
-            totalUsers,
-            totalAnalyses,
-            premiumUsers,
-            freeUsers,
-            revenue,
-            fileUploads
-        };
+        return { totalUsers, totalAnalyses, premiumUsers, freeUsers, revenue, fileUploads };
     }
 
     getRecentAnalyses(limit = 10): DbAnalysis[] {
@@ -129,7 +138,7 @@ class DatabaseService {
         const existing = this.db.users.find(u => u.id === user.id);
         if (existing) {
             existing.lastLogin = Date.now();
-            existing.isPremium = user.isPremium;
+            // Do not overwrite subscription data here, only transient auth data
             this.save();
         } else {
             this.db.users.push({
@@ -138,14 +147,14 @@ class DatabaseService {
                 isPremium: user.isPremium,
                 joinedAt: Date.now(),
                 lastLogin: Date.now(),
-                analysisCount: user.analysisCount
+                analysisCount: user.analysisCount,
+                subscriptionStatus: 'none'
             });
             this.save();
         }
     }
 
     recordAnalysis(report: AnalysisReport, userId: string) {
-        // Add to analyses table
         this.db.analyses.push({
             id: report.id,
             userId: userId,
@@ -156,27 +165,54 @@ class DatabaseService {
             hallucinatedCount: report.hallucinatedCount
         });
 
-        // Update user record
         const user = this.db.users.find(u => u.id === userId);
         if (user) {
             user.analysisCount += 1;
         }
-
         this.save();
     }
     
-    createInvoice(userId: string, amount: number) {
+    // --- SUBSCRIPTION LOGIC ---
+
+    /**
+     * Activates a subscription.
+     * Acts as the single source of truth for "Upgrading" a user.
+     * Simulates what a webhook handler would do.
+     */
+    activateSubscription(userId: string, planId: string): DbUser | null {
+        const user = this.db.users.find(u => u.id === userId);
+        if (!user) return null;
+
+        const now = Date.now();
+        const periodEnd = now + (30 * 24 * 60 * 60 * 1000); // 30 days
+
+        // 1. Update User State
+        user.isPremium = true;
+        user.subscriptionStatus = 'active';
+        user.planType = 'pro_monthly';
+        user.currentPeriodStart = now;
+        user.currentPeriodEnd = periodEnd;
+        user.subscriptionId = `sub_${now}_${Math.random().toString(36).substr(2,5)}`;
+        user.customerId = user.customerId || `cus_${Math.random().toString(36).substr(2,8)}`;
+        user.cancelAtPeriodEnd = false;
+
+        // 2. Generate Invoice
         const invoice: DbInvoice = {
-            id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            id: `inv_${now}_${Math.random().toString(36).substr(2, 4)}`,
             userId,
-            date: Date.now(),
-            amount,
-            status: 'Paid'
+            date: now,
+            amount: 14.99,
+            status: 'Paid',
+            billingPeriodStart: now,
+            billingPeriodEnd: periodEnd
         };
+        
         if (!this.db.invoices) this.db.invoices = [];
         this.db.invoices.push(invoice);
+
+        this.logEvent('INFO', `Subscription activated for ${userId}. Invoice ${invoice.id} generated.`);
         this.save();
-        return invoice;
+        return user;
     }
 
     logEvent(level: 'INFO' | 'WARN' | 'ERROR', message: string) {
@@ -186,12 +222,7 @@ class DatabaseService {
             level,
             message
         });
-        
-        // Keep logs from growing infinitely
-        if (this.db.logs.length > 200) {
-            this.db.logs = this.db.logs.slice(-200);
-        }
-        
+        if (this.db.logs.length > 200) this.db.logs = this.db.logs.slice(-200);
         this.save();
     }
 }

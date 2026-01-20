@@ -1,25 +1,52 @@
 import React, { useState } from 'react';
-import { Check, Loader2, ArrowLeft } from 'lucide-react';
-import { initiateCheckout } from '../services/subscriptionService';
+import { Check, Loader2, ArrowLeft, Lock } from 'lucide-react';
+import { initiateCheckout, handlePaymentWebhook } from '../services/subscriptionService';
+import { User } from '../types';
 
 interface PricingPageProps {
+  user: User | null;
   onBack: () => void;
   onSubscribeSuccess: () => void;
+  onAuthReq: () => void;
 }
 
-export const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribeSuccess }) => {
+export const PricingPage: React.FC<PricingPageProps> = ({ user, onBack, onSubscribeSuccess, onAuthReq }) => {
   const [loading, setLoading] = useState(false);
 
+  const isPro = user?.subscriptionStatus === 'active';
+
   const handleSubscribe = async () => {
+    // 1. Auth Guard
+    if (!user) {
+        onAuthReq();
+        return;
+    }
+
+    // 2. Double Check Status
+    if (isPro) {
+        alert("You already have an active subscription.");
+        return;
+    }
+
     setLoading(true);
     try {
-        // Placeholder for Paddle Checkout
-        const success = await initiateCheckout('monthly_pro');
-        if (success) {
+        // 3. Initiate Checkout (Frontend)
+        const result = await initiateCheckout(user.id, 'monthly_pro');
+        
+        if (result.success) {
+            // 4. Simulate Webhook (Backend)
+            // In a real app, Paddle sends a webhook to your server, and your server updates the DB.
+            // Here we simulate the server receiving that webhook immediately after success.
+            await handlePaymentWebhook(user.id, 'monthly_pro');
+            
+            // 5. Success
             onSubscribeSuccess();
+        } else {
+            alert(result.message || "Payment failed. Please try again.");
         }
     } catch (e) {
-        alert("Subscription failed. Please try again.");
+        console.error(e);
+        alert("An unexpected error occurred.");
     } finally {
         setLoading(false);
     }
@@ -38,7 +65,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribeSuc
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
         {/* Free Plan */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex flex-col">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex flex-col opacity-75 hover:opacity-100 transition-opacity">
             <h3 className="text-xl font-bold text-slate-900">Free Tier</h3>
             <div className="mt-4 mb-8">
                 <span className="text-4xl font-bold">$0</span>
@@ -88,14 +115,25 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBack, onSubscribeSuc
                     <div className="bg-blue-600 rounded-full p-1"><Check className="w-3 h-3" /></div> Priority Support
                 </li>
             </ul>
-            <button 
-                onClick={handleSubscribe}
-                disabled={loading}
-                className="w-full py-3 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-500 transition-colors flex justify-center items-center gap-2"
-            >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-                {loading ? 'Processing...' : 'Subscribe Now'}
-            </button>
+            
+            {isPro ? (
+                 <button 
+                    disabled
+                    className="w-full py-3 rounded-lg bg-green-600 text-white font-bold opacity-90 cursor-default flex justify-center items-center gap-2"
+                >
+                    <Check className="w-5 h-5" /> Current Plan
+                </button>
+            ) : (
+                <button 
+                    onClick={handleSubscribe}
+                    disabled={loading}
+                    className="w-full py-3 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-500 transition-colors flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                    {!user && <Lock className="w-4 h-4" />}
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (!user ? 'Log in to Subscribe' : 'Subscribe Now')}
+                </button>
+            )}
+            
             <p className="text-center text-xs text-slate-400 mt-4">Secure payment via Paddle</p>
         </div>
       </div>

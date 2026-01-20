@@ -7,7 +7,7 @@ import { AuthModal } from './components/AuthModal';
 import { SupportPage } from './components/SupportPage';
 import { PricingPage } from './components/PricingPage';
 import { AdminPanel } from './components/AdminPanel';
-import { BillingPage } from './components/BillingPage'; // New Import
+import { BillingPage } from './components/BillingPage';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
@@ -98,7 +98,8 @@ const App: React.FC = () => {
     const mockUser: User = { 
         id: userId, 
         isPremium: false, 
-        analysisCount: 0 
+        analysisCount: 0,
+        subscriptionStatus: 'none'
     };
 
     db.ensureUser(mockUser, 'user@example.com');
@@ -111,30 +112,21 @@ const App: React.FC = () => {
   };
 
   const handleSubscriptionSuccess = () => {
-      if (user) {
-          const updatedUser = { ...user, isPremium: true };
-          setUser(updatedUser);
-          
-          db.ensureUser(updatedUser);
-          db.createInvoice(user.id, 14.99); // Generate persistent invoice
-          db.logEvent('INFO', `User upgraded to Premium: ${user.id}`);
+      // Logic has moved to subscriptionService/db
+      // Frontend just needs to reload user state from DB source of truth
+      if (!user) return;
 
+      // Fetch latest user data (Pro status, subscription status) from DB
+      const updatedUser = db.getUser(user.id) as User;
+      
+      if (updatedUser) {
+          setUser(updatedUser);
+          // Persist updated session
           const isLocal = !!localStorage.getItem('vericite_user_session_v1');
           storageService.saveUserSession(updatedUser, isLocal);
           
           alert("Successfully upgraded to Pro!");
-          setView('billing'); // Redirect to billing to see invoice
-      } else {
-           const userId = 'u_pro_' + Date.now();
-           const mockUser: User = { id: userId, isPremium: true, analysisCount: 0 };
-           
-           db.ensureUser(mockUser);
-           db.createInvoice(mockUser.id, 14.99); // Generate persistent invoice
-           db.logEvent('INFO', `New Pro User created: ${userId}`);
-
-           setUser(mockUser);
-           storageService.saveUserSession(mockUser, false);
-           setView('billing');
+          setView('billing'); 
       }
   };
 
@@ -231,7 +223,14 @@ const App: React.FC = () => {
   const renderContent = () => {
       switch(view) {
           case 'pricing':
-              return <PricingPage onBack={() => setView('home')} onSubscribeSuccess={handleSubscriptionSuccess} />;
+              return (
+                <PricingPage 
+                    user={user}
+                    onBack={() => setView('home')} 
+                    onSubscribeSuccess={handleSubscriptionSuccess}
+                    onAuthReq={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
+                />
+              );
           case 'billing':
               return user ? (
                   <BillingPage 

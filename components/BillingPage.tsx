@@ -1,7 +1,7 @@
 import React from 'react';
 import { User } from '../types';
 import { DbInvoice } from '../services/database';
-import { Download, CreditCard, CheckCircle, Clock, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Download, CreditCard, CheckCircle, Clock, AlertTriangle, ArrowLeft, Calendar } from 'lucide-react';
 
 interface BillingPageProps {
     user: User;
@@ -10,10 +10,14 @@ interface BillingPageProps {
 }
 
 export const BillingPage: React.FC<BillingPageProps> = ({ user, invoices, onBack }) => {
-    // Mock subscription details based on user status
-    const planName = user.isPremium ? 'Pro Academic' : 'Free Tier';
-    const amount = user.isPremium ? '$14.99' : '$0.00';
-    const nextBilling = user.isPremium ? new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toLocaleDateString() : 'N/A';
+    // Derived state from User object
+    const isActive = user.subscriptionStatus === 'active';
+    const planName = isActive ? 'Pro Academic' : 'Free Tier';
+    const amount = isActive ? '$14.99' : '$0.00';
+    
+    const nextBillingDate = user.currentPeriodEnd 
+        ? new Date(user.currentPeriodEnd).toLocaleDateString() 
+        : 'N/A';
     
     return (
         <div className="max-w-4xl mx-auto py-12 px-6">
@@ -39,17 +43,19 @@ export const BillingPage: React.FC<BillingPageProps> = ({ user, invoices, onBack
                         </div>
                          <div>
                             <p className="text-sm text-gray-500">Status</p>
-                            <p className={`font-medium flex items-center gap-2 ${user.isPremium ? 'text-emerald-600' : 'text-gray-600'}`}>
-                                {user.isPremium ? <CheckCircle className="w-4 h-4" /> : null}
-                                {user.isPremium ? 'Active' : 'Free'}
-                            </p>
+                            <div className={`font-medium flex items-center gap-2 mt-1 ${isActive ? 'text-emerald-600' : 'text-gray-600'}`}>
+                                {isActive ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                                <span className="capitalize">{user.subscriptionStatus === 'none' ? 'Free' : user.subscriptionStatus}</span>
+                            </div>
                         </div>
                         <div>
                             <p className="text-sm text-gray-500">Next Billing Date</p>
-                            <p className="font-medium text-gray-900">{nextBilling}</p>
+                            <div className="font-medium text-gray-900 flex items-center gap-2 mt-1">
+                                <Calendar className="w-4 h-4 text-gray-400" /> {nextBillingDate}
+                            </div>
                         </div>
                     </div>
-                    {user.isPremium && (
+                    {isActive && (
                         <div className="mt-6 pt-6 border-t border-gray-100 flex gap-4">
                             <button className="text-blue-600 text-sm font-medium hover:underline">Update Payment Method</button>
                             <button className="text-red-600 text-sm font-medium hover:underline">Cancel Subscription</button>
@@ -66,9 +72,12 @@ export const BillingPage: React.FC<BillingPageProps> = ({ user, invoices, onBack
                             <p className="text-xs text-gray-500">Merchant of Record</p>
                         </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-4 leading-relaxed">
-                        Payments are securely processed by Paddle. Your financial data is not stored on our servers.
-                    </p>
+                    {user.customerId && (
+                         <div className="mt-3 pt-3 border-t border-slate-200">
+                             <p className="text-xs text-gray-400">Customer ID</p>
+                             <p className="text-xs font-mono text-gray-600">{user.customerId}</p>
+                         </div>
+                    )}
                 </div>
             </div>
 
