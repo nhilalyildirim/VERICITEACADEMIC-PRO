@@ -288,7 +288,6 @@ const App: React.FC = () => {
           onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
           onLogout={handleLogout}
           onNavigate={setView}
-          onPricingClick={() => { setView('pricing'); }}
           analysisCount={analysisCount}
       />
       <main className="container mx-auto px-4 flex-grow">

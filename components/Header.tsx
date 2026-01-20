@@ -10,11 +10,10 @@ interface HeaderProps {
     onRegister: () => void;
     onLogout: () => void;
     onNavigate: (view: any) => void;
-    onPricingClick: () => void;
     analysisCount: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, onPricingClick, analysisCount }) => {
+export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, analysisCount }) => {
   const remainingFree = Math.max(0, MAX_FREE_ANALYSIS - analysisCount);
 
   return (
