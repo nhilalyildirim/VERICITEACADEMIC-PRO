@@ -1,80 +1,103 @@
 import React from 'react';
-import { ShieldCheck, LogOut, Sparkles } from 'lucide-react';
-import { User } from '../types';
+import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, HelpCircle } from 'lucide-react';
+import { User as UserType } from '../types';
+import { MAX_FREE_ANALYSIS } from '../constants';
 
 interface HeaderProps {
-    user: User | null;
+    user: UserType | null;
     currentView: string;
     onLogin: () => void;
     onRegister: () => void;
     onLogout: () => void;
-    onNavigate: (view: 'home' | 'dashboard') => void;
+    onNavigate: (view: any) => void;
     onPricingClick: () => void;
+    analysisCount: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, onPricingClick }) => {
+export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, onPricingClick, analysisCount }) => {
+  const remainingFree = Math.max(0, MAX_FREE_ANALYSIS - analysisCount);
+
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+    <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
           <div 
-            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+            className="flex items-center gap-3 cursor-pointer group"
             onClick={() => onNavigate('home')}
           >
-            <div className="bg-indigo-600 p-1.5 rounded-lg">
-                <ShieldCheck className="h-6 w-6 text-white" />
+            <div className="bg-blue-600 p-1.5 rounded-lg group-hover:bg-blue-500 transition-colors">
+                <BookOpenCheck className="h-5 w-5 text-white" />
             </div>
-            <span className="font-bold text-xl tracking-tight text-slate-900">
-              VeriCite <span className="text-indigo-600">Academic</span>
+            <span className="font-bold text-xl text-white tracking-tight">
+              VeriCite <span className="text-blue-500 font-light">Academic</span>
             </span>
           </div>
           
-          <nav className="hidden md:flex space-x-8">
-             <button onClick={() => onNavigate('home')} className={`font-medium transition-colors ${currentView === 'home' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Verify</button>
+          <nav className="hidden md:flex gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
+             <button 
+                onClick={() => onNavigate('home')} 
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'home' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+             >
+                <ShieldCheck className="w-4 h-4" /> Verify
+             </button>
              {user && (
-                 <button onClick={() => onNavigate('dashboard')} className={`font-medium transition-colors ${currentView === 'dashboard' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Dashboard</button>
+                 <button 
+                    onClick={() => onNavigate('dashboard')} 
+                    className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'dashboard' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                 >
+                    <LayoutDashboard className="w-4 h-4" /> Dashboard
+                 </button>
              )}
-             <button onClick={onPricingClick} className="text-slate-500 hover:text-indigo-600 font-medium transition-colors">Pricing</button>
+             <button 
+                onClick={() => onNavigate('support')} 
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'support' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+             >
+                <HelpCircle className="w-4 h-4" /> Support
+             </button>
           </nav>
 
           <div className="flex items-center gap-4">
+             {/* Free Trial Counter Visibility */}
+             {!user?.isPremium && (
+                 <div className="hidden md:flex items-center px-3 py-1 rounded bg-slate-800 border border-slate-700">
+                     <span className="text-xs text-slate-300">
+                         <span className="font-bold text-white">{remainingFree}</span> / {MAX_FREE_ANALYSIS} free scans left
+                     </span>
+                 </div>
+             )}
+
              {user ? (
-                 <div className="flex items-center gap-4">
-                     <div className="hidden md:flex items-center gap-2">
-                         <span className="text-sm text-slate-600">
-                             {user.isPremium ? 'Pro Plan' : 'Free Plan'}
-                         </span>
-                         <div className="h-8 w-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold border border-indigo-200">
-                             U
-                         </div>
+                 <div className="flex items-center gap-4 pl-4 border-l border-slate-700">
+                     <div className="text-right hidden sm:block">
+                        <div className="text-xs text-slate-400">Plan</div>
+                        <div className="text-xs font-bold text-white flex items-center gap-1">
+                            {user.isPremium ? <span className="text-amber-400 flex items-center gap-1"><Zap className="w-3 h-3 fill-current" /> Premium</span> : 'Free Tier'}
+                        </div>
                      </div>
                      <button 
                         onClick={onLogout}
-                        className="text-slate-400 hover:text-slate-600"
+                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"
                         title="Sign Out"
                      >
                          <LogOut className="w-5 h-5" />
                      </button>
                  </div>
              ) : (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 text-sm">
                     <button 
                         onClick={onLogin}
-                        className="hidden md:flex px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+                        className="text-slate-300 hover:text-white font-medium transition-colors"
                     >
-                        Sign In
+                        Log In
                     </button>
                     <button 
                         onClick={onRegister}
-                        className="inline-flex items-center gap-2 px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 transition-all shadow-md"
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium shadow-lg shadow-blue-900/20 transition-all transform hover:scale-105"
                     >
-                        <Sparkles className="w-4 h-4" />
                         Get Started
                     </button>
                 </div>
              )}
           </div>
-        </div>
       </div>
     </header>
   );

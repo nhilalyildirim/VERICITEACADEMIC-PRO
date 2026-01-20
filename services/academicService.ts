@@ -72,15 +72,18 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
       }
   }
 
-  // 3. Evaluation & FALLBACK to Google Search
+  // 3. Evaluation
   const confidence = Math.min(Math.round(maxScore * 100), 100);
 
-  if (maxScore > 0.75) {
+  // If High Confidence Crossref Match
+  if (maxScore > 0.80) {
       return createVerified(extracted, bestMatch, confidence, "Verified via Crossref.");
   }
 
   // --- FALLBACK: GOOGLE SEARCH GROUNDING ---
-  // If Crossref score is low, use Gemini with Search tool to prevent False Positives.
+  // STRICT RULE: If Crossref score is low, use Gemini with Search tool.
+  // If Search tool FAILS to find a web match, we MUST consider it HALLUCINATED.
+  
   const searchResult = await verifyWithGoogleSearch(extracted);
   
   if (searchResult.verified) {
@@ -102,13 +105,16 @@ export const verifyCitationWithCrossref = async (extracted: any): Promise<Citati
       };
   }
 
-  if (maxScore > 0.5) {
+  // 4. Ambiguous Threshold
+  if (maxScore > 0.6) {
       return createCitation(extracted, VerificationStatus.AMBIGUOUS, confidence, 
-        `Possible match: "${bestMatch?.title?.[0]}". Please verify manually.`);
+        `Possible match found (${Math.round(maxScore*100)}%), but strictly below verification threshold. Please check manually.`);
   }
 
+  // 5. HALLUCINATION GUARANTEE
+  // If no DOI, no Crossref match > 0.8, and no Google Search verification -> LIKELY FABRICATED.
   return createCitation(extracted, VerificationStatus.HALLUCINATED, confidence, 
-      "Source not found in Crossref or Google Search.");
+      "LIKELY FABRICATED. Source not found in Crossref or Google Search.");
 };
 
 const createCitation = (ex: any, status: VerificationStatus, score: number, notes: string): Citation => ({

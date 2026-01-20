@@ -1,37 +1,77 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { InputSection } from './components/InputSection';
 import { AnalysisReportView } from './components/AnalysisReport';
 import { Dashboard } from './components/Dashboard';
 import { AuthModal } from './components/AuthModal';
+import { SupportPage } from './components/SupportPage';
+import { PricingPage } from './components/PricingPage';
+import { AdminPanel } from './components/AdminPanel';
+import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
+import { TermsOfService } from './components/legal/TermsOfService';
+import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationWithCrossref } from './services/academicService';
 import { User, AnalysisReport, VerificationStatus, Citation } from './types';
 import { MAX_FREE_ANALYSIS } from './constants';
+
+type ViewType = 'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'admin' | 'privacy' | 'terms' | 'integrity';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'upgrade'>('login');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [view, setView] = useState<'home' | 'dashboard' | 'report'>('home');
+  const [view, setView] = useState<ViewType>('home');
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
   const [analysisCount, setAnalysisCount] = useState(0);
 
+  // Check URL parameters for hidden admin route on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'admin') {
+      setView('admin');
+    }
+  }, []);
+
   const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade') => {
+    setIsAuthModalOpen(false);
+    
+    if (mode === 'upgrade') {
+        setView('pricing');
+        return;
+    }
+
     const mockUser: User = { 
         id: 'u1', 
-        isPremium: mode === 'upgrade', 
+        isPremium: false, 
         analysisCount: 0 
     };
     setUser(mockUser);
-    setIsAuthModalOpen(false);
-    if (mode !== 'upgrade') setView('dashboard');
+    setView('dashboard');
+  };
+
+  const handleSubscriptionSuccess = () => {
+      if (user) {
+          setUser({ ...user, isPremium: true });
+          alert("Successfully upgraded to Pro!");
+          setView('dashboard');
+      } else {
+          // If not logged in but subscribed (simulated), create mock premium user
+           const mockUser: User = { 
+            id: 'u1-pro', 
+            isPremium: true, 
+            analysisCount: 0 
+            };
+            setUser(mockUser);
+            setView('dashboard');
+      }
   };
 
   const handleAnalysis = async (text: string) => {
-    if (!user && analysisCount >= MAX_FREE_ANALYSIS) {
+    // If user is not premium and has exceeded limits
+    if (!user?.isPremium && analysisCount >= MAX_FREE_ANALYSIS) {
       setAuthMode('upgrade');
       setIsAuthModalOpen(true);
       return;
@@ -50,23 +90,18 @@ const App: React.FC = () => {
       }
 
       // 2. Verify Citations (Batched)
-      // We process in small batches to respect the API rate limit (429 errors).
-      const BATCH_SIZE = 2; // Reduced batch size for safety
+      const BATCH_SIZE = 2; 
       const verifiedCitations: Citation[] = [];
 
       for (let i = 0; i < extractedRaw.length; i += BATCH_SIZE) {
           const chunk = extractedRaw.slice(i, i + BATCH_SIZE);
-          
           try {
-            // Process current chunk in parallel
             const chunkResults = await Promise.all(
                 chunk.map((item: any) => verifyCitationWithCrossref(item))
             );
             verifiedCitations.push(...chunkResults);
           } catch (chunkError) {
              console.error("Error processing chunk:", chunkError);
-             // If a chunk fails, try to mark them as 'Pending' or 'Error' instead of crashing
-             // For now, we just skip them or add simple fallback
              chunk.forEach((item: any) => {
                  verifiedCitations.push({
                      id: Math.random().toString(36).substr(2, 9),
@@ -78,7 +113,6 @@ const App: React.FC = () => {
              });
           }
 
-          // Delay between batches to allow API quota to recover
           if (i + BATCH_SIZE < extractedRaw.length) {
               await new Promise(resolve => setTimeout(resolve, 2000));
           }
@@ -113,6 +147,18 @@ const App: React.FC = () => {
 
   const renderContent = () => {
       switch(view) {
+          case 'admin':
+              return <AdminPanel onLogout={() => setView('home')} />;
+          case 'pricing':
+              return <PricingPage onBack={() => setView('home')} onSubscribeSuccess={handleSubscriptionSuccess} />;
+          case 'support':
+              return <SupportPage onBack={() => setView('home')} />;
+          case 'privacy':
+              return <PrivacyPolicy onBack={() => setView('home')} />;
+          case 'terms':
+              return <TermsOfService onBack={() => setView('home')} />;
+          case 'integrity':
+              return <AcademicIntegrity onBack={() => setView('home')} />;
           case 'dashboard':
               return user ? (
                   <Dashboard user={user} history={history} onNavigateHome={() => setView('home')} onViewReport={(r) => { setCurrentReport(r); setView('report'); }} />
@@ -146,46 +192,51 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans flex flex-col">
-      <Header 
-        user={user} 
-        currentView={view}
-        onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} 
-        onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
-        onLogout={() => { setUser(null); setView('home'); }}
-        onNavigate={setView}
-        onPricingClick={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }}
-      />
+      {view !== 'admin' && (
+        <Header 
+            user={user} 
+            currentView={view}
+            onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} 
+            onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
+            onLogout={() => { setUser(null); setView('home'); }}
+            onNavigate={setView}
+            onPricingClick={() => { setView('pricing'); }}
+            analysisCount={analysisCount}
+        />
+      )}
       <main className="container mx-auto px-4 flex-grow">
         {renderContent()}
       </main>
       
-      <footer className="w-full border-t bg-white py-10 mt-16">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-            <p className="text-sm font-semibold text-gray-700 mb-6">
-                &copy; 2025 VeriCite Academic. All rights reserved.
-            </p>
-            
-            <div className="max-w-3xl mx-auto text-xs text-gray-500 space-y-3 leading-relaxed border-t border-gray-100 pt-6">
-                <p>
-                    <strong className="text-gray-600">Disclaimer:</strong> VeriCite Academic utilizes advanced artificial intelligence and database cross-referencing to assist in the verification of academic citations. 
-                    While we strive for the highest possible accuracy, AI models can occasionally produce errors, hallucinations, or false positives. 
+      {view !== 'admin' && (
+        <footer className="w-full border-t bg-white py-10 mt-16">
+            <div className="max-w-6xl mx-auto px-4 text-center">
+                <p className="text-sm font-semibold text-gray-700 mb-6">
+                    &copy; 2026 VeriCite Academic. All rights reserved.
                 </p>
-                <p>
-                    This tool is intended strictly as a research aid and is not a substitute for human academic judgment. 
-                    Users are solely responsible for verifying the final accuracy of their citations against original source documents before submission. 
-                    VeriCite bears no responsibility for academic integrity violations, grading outcomes, or publication rejections resulting from the use of this service.
-                </p>
-            </div>
+                
+                <div className="max-w-3xl mx-auto text-xs text-gray-500 space-y-3 leading-relaxed border-t border-gray-100 pt-6">
+                    <p>
+                        <strong className="text-gray-600">Disclaimer:</strong> VeriCite Academic utilizes advanced artificial intelligence and database cross-referencing to assist in the verification of academic citations. 
+                        While we strive for the highest possible accuracy, AI models can occasionally produce errors, hallucinations, or false positives. 
+                    </p>
+                    <p>
+                        This tool is intended strictly as a research aid and is not a substitute for human academic judgment. 
+                        Users are solely responsible for verifying the final accuracy of their citations against original source documents before submission. 
+                        VeriCite bears no responsibility for academic integrity violations, grading outcomes, or publication rejections resulting from the use of this service.
+                    </p>
+                </div>
 
-            <div className="flex justify-center gap-6 mt-8 text-xs text-gray-400">
-                <a href="#" className="hover:text-blue-600 transition-colors">Privacy Policy</a>
-                <span className="text-gray-300">|</span>
-                <a href="#" className="hover:text-blue-600 transition-colors">Terms of Service</a>
-                <span className="text-gray-300">|</span>
-                <a href="#" className="hover:text-blue-600 transition-colors">Academic Integrity Guidelines</a>
+                <div className="flex flex-wrap justify-center gap-6 mt-8 text-xs text-gray-400">
+                    <button onClick={() => setView('privacy')} className="hover:text-blue-600 transition-colors">Privacy Policy</button>
+                    <span className="text-gray-300">|</span>
+                    <button onClick={() => setView('terms')} className="hover:text-blue-600 transition-colors">Terms of Service</button>
+                    <span className="text-gray-300">|</span>
+                    <button onClick={() => setView('integrity')} className="hover:text-blue-600 transition-colors">Academic Integrity Guidelines</button>
+                </div>
             </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       <AuthModal 
         isOpen={isAuthModalOpen} 

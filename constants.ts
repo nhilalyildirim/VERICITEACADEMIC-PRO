@@ -8,7 +8,7 @@ export const PRICING = {
   CURRENCY: "$"
 };
 
-export const MAX_FREE_ANALYSIS = 10;
+export const MAX_FREE_ANALYSIS = 5;
 
 export const STYLE_OPTIONS = [
   CitationStyle.APA7,
