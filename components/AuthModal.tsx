@@ -4,13 +4,14 @@ import { X } from 'lucide-react';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthSuccess: (mode: 'login' | 'register' | 'upgrade') => void;
+  onAuthSuccess: (mode: 'login' | 'register' | 'upgrade', rememberMe: boolean) => void;
   initialMode: 'login' | 'register' | 'upgrade';
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuccess, initialMode }) => {
   const [mode, setMode] = useState(initialMode);
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   // Reset mode when initialMode changes
   React.useEffect(() => {
@@ -19,8 +20,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
 
   const handleGoogleLogin = async () => {
       // Abstracted Google OAuth Logic
-      // In production, this would redirect to your backend OAuth endpoint
-      // e.g., window.location.href = '/api/auth/google';
       setLoading(true);
       console.log("Initiating Google OAuth flow...");
       setTimeout(() => {
@@ -48,7 +47,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
                     <span className="text-2xl font-bold">$14.99</span>/mo
                 </div>
                 <p className="text-gray-600 mb-6 text-sm">Unlock unlimited verifications, file uploads, and priority support.</p>
-                <button onClick={() => onAuthSuccess('upgrade')} className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 font-bold">
+                <button onClick={() => onAuthSuccess('upgrade', false)} className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 font-bold">
                     View Pricing & Subscribe
                 </button>
             </div>
@@ -77,7 +76,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
 
                 <input type="email" placeholder="Email" className="w-full p-2 border rounded-md" />
                 <input type="password" placeholder="Password" className="w-full p-2 border rounded-md" />
-                <button onClick={() => onAuthSuccess(mode)} className="w-full bg-slate-900 text-white py-2 rounded-md hover:bg-slate-800 font-medium">
+                
+                {mode === 'login' && (
+                  <div className="flex items-center">
+                    <input 
+                      id="remember_me" 
+                      type="checkbox" 
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                    />
+                    <label htmlFor="remember_me" className="ml-2 block text-sm text-gray-900">
+                      Remember me
+                    </label>
+                  </div>
+                )}
+
+                <button onClick={() => onAuthSuccess(mode, rememberMe)} className="w-full bg-slate-900 text-white py-2 rounded-md hover:bg-slate-800 font-medium">
                     {mode === 'register' ? 'Sign Up' : 'Sign In'}
                 </button>
                 <p className="text-center text-sm text-gray-600 cursor-pointer hover:underline" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>

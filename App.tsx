@@ -12,6 +12,7 @@ import { TermsOfService } from './components/legal/TermsOfService';
 import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationWithCrossref } from './services/academicService';
+import { storageService, INACTIVITY_LIMIT_MS } from './services/storageService';
 import { User, AnalysisReport, VerificationStatus, Citation } from './types';
 import { MAX_FREE_ANALYSIS } from './constants';
 
@@ -19,8 +20,6 @@ type ViewType = 'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'priva
 
 const App: React.FC = () => {
   // ROUTING LOGIC
-  // If the path starts with /admin, we render the Isolated Admin Panel
-  // The AdminPanel component handles its own sub-routing (login vs dashboard)
   const [isAdminRoute, setIsAdminRoute] = useState(window.location.pathname.startsWith('/admin'));
 
   useEffect(() => {
@@ -31,24 +30,76 @@ const App: React.FC = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // --- STATE FOR PUBLIC APP ---
-  const [user, setUser] = useState<User | null>(null);
+  // --- STATE WITH PERSISTENCE INITIALIZATION ---
+  
+  // Initialize User from Session/Local Storage
+  const [user, setUser] = useState<User | null>(() => storageService.getUserSession());
+  
+  // Initialize Analysis Count
+  // If user is logged in, usage should ideally come from backend (mocked here via user object).
+  // If guest, usage comes from persistent guest storage.
+  const [analysisCount, setAnalysisCount] = useState<number>(() => {
+    const sessionUser = storageService.getUserSession();
+    if (sessionUser) return sessionUser.analysisCount;
+    return storageService.getGuestUsage();
+  });
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'upgrade'>('login');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [view, setView] = useState<ViewType>('home');
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
-  const [analysisCount, setAnalysisCount] = useState(0);
 
   // If we are in the admin route, strictly render only the Admin Panel
   if (isAdminRoute) {
       return <AdminPanel />;
   }
 
+  // --- SESSION MANAGEMENT (INACTIVITY TIMEOUT) ---
+  useEffect(() => {
+    // Only track activity if a user is logged in
+    if (!user) return;
+
+    const checkInactivity = () => {
+      const lastActive = storageService.getLastActiveTime();
+      if (lastActive > 0 && Date.now() - lastActive > INACTIVITY_LIMIT_MS) {
+        handleLogout();
+      }
+    };
+
+    const updateActivity = () => {
+      storageService.updateLastActive();
+    };
+
+    // Listen for user activity
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('click', updateActivity);
+    
+    // Check for timeout periodically
+    const interval = setInterval(checkInactivity, 60000); // Check every minute
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('click', updateActivity);
+      clearInterval(interval);
+    };
+  }, [user]);
+
+
   // --- PUBLIC APP LOGIC ---
 
-  const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade') => {
+  const handleLogout = () => {
+      storageService.clearSession();
+      setUser(null);
+      // Revert to guest usage count
+      setAnalysisCount(storageService.getGuestUsage());
+      setView('home');
+  };
+
+  const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade', rememberMe: boolean = false) => {
     setIsAuthModalOpen(false);
     
     if (mode === 'upgrade') {
@@ -56,18 +107,31 @@ const App: React.FC = () => {
         return;
     }
 
+    // Mock Login - In production this comes from backend
+    // Merge guest usage into account if we wanted, but for now reset or load user's profile
     const mockUser: User = { 
         id: 'u1', 
         isPremium: false, 
-        analysisCount: 0 
+        analysisCount: 0 // In real app, load this from DB
     };
+
+    storageService.saveUserSession(mockUser, rememberMe);
     setUser(mockUser);
+    setAnalysisCount(mockUser.analysisCount);
     setView('dashboard');
   };
 
   const handleSubscriptionSuccess = () => {
       if (user) {
-          setUser({ ...user, isPremium: true });
+          const updatedUser = { ...user, isPremium: true };
+          setUser(updatedUser);
+          // Persist the upgrade
+          // In a real app we'd need to know if rememberMe was used to pick correct storage,
+          // but storageService handles updating whichever exists.
+          // For simplicity here we just re-save to currently active session storage type
+          const isLocal = !!localStorage.getItem('vericite_user_session_v1');
+          storageService.saveUserSession(updatedUser, isLocal);
+          
           alert("Successfully upgraded to Pro!");
           setView('dashboard');
       } else {
@@ -77,6 +141,7 @@ const App: React.FC = () => {
             analysisCount: 0 
             };
             setUser(mockUser);
+            storageService.saveUserSession(mockUser, false);
             setView('dashboard');
       }
   };
@@ -141,9 +206,24 @@ const App: React.FC = () => {
         citations: verifiedCitations
       };
 
+      // --- PERSISTENCE UPDATE ---
+      const newCount = analysisCount + 1;
+      setAnalysisCount(newCount);
+      
+      if (user) {
+          // Update User Session
+          const updatedUser = { ...user, analysisCount: newCount };
+          setUser(updatedUser);
+          const isLocal = !!localStorage.getItem('vericite_user_session_v1');
+          storageService.saveUserSession(updatedUser, isLocal);
+      } else {
+          // Update Guest Usage
+          storageService.saveGuestUsage(newCount);
+      }
+      // --------------------------
+
       setCurrentReport(newReport);
       setHistory(prev => [newReport, ...prev]);
-      setAnalysisCount(prev => prev + 1);
       setView('report');
 
     } catch (error: any) {
@@ -204,7 +284,7 @@ const App: React.FC = () => {
           currentView={view}
           onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} 
           onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
-          onLogout={() => { setUser(null); setView('home'); }}
+          onLogout={handleLogout}
           onNavigate={setView}
           onPricingClick={() => { setView('pricing'); }}
           analysisCount={analysisCount}
