@@ -67,7 +67,11 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
 
              {user ? (
                  <div className="flex items-center gap-4 pl-4 border-l border-slate-700">
-                     <div className="text-right hidden sm:block">
+                     <div 
+                        className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={onPricingClick}
+                        title="View Plan Details"
+                     >
                         <div className="text-xs text-slate-400">Plan</div>
                         <div className="text-xs font-bold text-white flex items-center gap-1">
                             {user.isPremium ? <span className="text-amber-400 flex items-center gap-1"><Zap className="w-3 h-3 fill-current" /> Premium</span> : 'Free Tier'}

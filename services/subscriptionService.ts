@@ -21,7 +21,7 @@ export interface SubscriptionState {
 /**
  * Simulates checking subscription status from a backend.
  */
-export const getSubscriptionStatus = async (userId: string): Promise<SubscriptionState> => {
+export const getSubscriptionStatus = async (_userId: string): Promise<SubscriptionState> => {
     // In a real app, this fetches from your database which is synced via Paddle webhooks.
     // For now, we return a default state.
     return {
