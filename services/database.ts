@@ -108,6 +108,10 @@ class DatabaseService {
     getUser(userId: string): DbUser | undefined {
         return this.db.users.find(u => u.id === userId);
     }
+    
+    getUserByEmail(email: string): DbUser | undefined {
+        return this.db.users.find(u => u.email === email);
+    }
 
     getDashboardStats() {
         const totalUsers = this.db.users.length;

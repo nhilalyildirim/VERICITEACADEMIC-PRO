@@ -3,12 +3,13 @@ import { db } from './database';
 /**
  * Subscription Service
  * 
- * Simulates Paddle.com payment flow and webhook handling.
+ * Simulates Secure Payment Gateway flow (e.g., Paddle, Stripe).
  * Enforces strict backend-like processing for subscriptions.
  */
 
-export const PADDLE_CONFIG = {
-    vendorId: 123456, // Placeholder
+// Mock Configuration
+export const PAYMENT_CONFIG = {
+    vendorId: 'mock_vendor_id', 
     monthlyPlanId: 'plan_monthly_pro',
 };
 
@@ -18,42 +19,47 @@ export const PADDLE_CONFIG = {
  * Rules:
  * 1. User must be authenticated (checked by caller).
  * 2. User must NOT have an active subscription.
+ * 3. Does NOT activate subscription; only returns checkout URL/Status.
  */
-export const initiateCheckout = async (userId: string, planId: string): Promise<{ success: boolean, message?: string }> => {
+export const initiateCheckout = async (userId: string, planId: string): Promise<{ success: boolean, checkoutUrl?: string, message?: string }> => {
     // 1. Backend Check: Is user already active?
     const user = db.getUser(userId);
     if (!user) {
-        return { success: false, message: "User not found." };
+        return { success: false, message: "User session invalid." };
     }
     
     if (user.subscriptionStatus === 'active') {
-        return { success: false, message: "User already has an active subscription." };
+        return { success: false, message: "Subscription already active." };
     }
 
-    console.log(`[Paddle] Initializing checkout for user: ${userId}, plan: ${planId}`);
+    console.log(`[PaymentGateway] Initializing secure checkout for user: ${userId}, plan: ${planId}`);
     
-    // 2. Simulate User filling out Paddle Overlay
+    // 2. Simulate Network Request to Payment Provider
     return new Promise((resolve) => {
         setTimeout(() => {
-            // Random failure simulation (very rare)
+            // Random failure simulation (rare)
             if (Math.random() > 0.99) {
-                 resolve({ success: false, message: "Payment declined by bank." });
+                 resolve({ success: false, message: "Gateway connection timeout." });
             } else {
-                 console.log("[Paddle] Payment authorized.");
-                 resolve({ success: true });
+                 console.log("[PaymentGateway] Checkout session created.");
+                 // In a real app, this would be the specific URL to the hosted checkout page.
+                 resolve({ success: true, checkoutUrl: 'https://secure-checkout.example.com/pay/...' });
             }
-        }, 1500);
+        }, 1200);
     });
 };
 
 /**
- * Simulates the backend receiving a webhook from Paddle.
+ * Simulates the backend receiving a webhook from the Payment Provider.
  * This is the ONLY place where the database is actually updated to "Premium".
+ * 
+ * NOTE: In a production environment, this function would reside on a secured Node/Python server
+ * and would be triggered by an HTTP POST from Paddle/Stripe.
  */
-export const handlePaymentWebhook = async (userId: string, planId: string): Promise<boolean> => {
-    console.log(`[Webhook] Processing 'subscription_created' for ${userId}`);
+export const simulatePaymentWebhook = async (userId: string, planId: string): Promise<boolean> => {
+    console.log(`[Webhook] Server received 'payment_succeeded' event for ${userId}`);
     
-    // Delegate to database service to perform atomic update
+    // Delegate to database service to perform atomic update (Source of Truth)
     const updatedUser = db.activateSubscription(userId, planId);
     
     return !!updatedUser;

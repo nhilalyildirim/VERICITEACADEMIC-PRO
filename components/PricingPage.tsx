@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Check, Loader2, ArrowLeft, Lock } from 'lucide-react';
-import { initiateCheckout, handlePaymentWebhook } from '../services/subscriptionService';
+import { Check, Loader2, ArrowLeft, Lock, ShieldCheck } from 'lucide-react';
+import { initiateCheckout, simulatePaymentWebhook } from '../services/subscriptionService';
 import { User } from '../types';
 
 interface PricingPageProps {
@@ -30,25 +30,35 @@ export const PricingPage: React.FC<PricingPageProps> = ({ user, onBack, onSubscr
 
     setLoading(true);
     try {
-        // 3. Initiate Checkout (Frontend)
+        // 3. Initiate Checkout
+        // This simulates redirecting the user to a secure hosted checkout page
         const result = await initiateCheckout(user.id, 'monthly_pro');
         
         if (result.success) {
-            // 4. Simulate Webhook (Backend)
-            // In a real app, Paddle sends a webhook to your server, and your server updates the DB.
-            // Here we simulate the server receiving that webhook immediately after success.
-            await handlePaymentWebhook(user.id, 'monthly_pro');
+            // DEMO ONLY:
+            // Since we can't actually leave the page to a real payment processor in this environment,
+            // we will simulate the user completing the payment and the webhook firing.
+            // In a real app, the user would be redirected: window.location.href = result.checkoutUrl;
             
-            // 5. Success
-            onSubscribeSuccess();
+            console.log("Redirecting to payment provider...");
+            
+            // Artificial delay to simulate user entering details on checkout page
+            setTimeout(async () => {
+                // 4. Simulate Backend Webhook
+                await simulatePaymentWebhook(user.id, 'monthly_pro');
+                
+                setLoading(false);
+                onSubscribeSuccess();
+            }, 2000);
+            
         } else {
-            alert(result.message || "Payment failed. Please try again.");
+            setLoading(false);
+            alert(result.message || "Payment initialization failed. Please try again.");
         }
     } catch (e) {
-        console.error(e);
-        alert("An unexpected error occurred.");
-    } finally {
         setLoading(false);
+        console.error(e);
+        alert("An unexpected error occurred connecting to the payment provider.");
     }
   };
 
@@ -130,11 +140,20 @@ export const PricingPage: React.FC<PricingPageProps> = ({ user, onBack, onSubscr
                     className="w-full py-3 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-500 transition-colors flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                     {!user && <Lock className="w-4 h-4" />}
-                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (!user ? 'Log in to Subscribe' : 'Subscribe Now')}
+                    {loading ? (
+                        <>
+                           <Loader2 className="w-5 h-5 animate-spin" /> Processing Securely...
+                        </>
+                    ) : (
+                        !user ? 'Log in to Subscribe' : 'Subscribe Now'
+                    )}
                 </button>
             )}
             
-            <p className="text-center text-xs text-slate-400 mt-4">Secure payment via Paddle</p>
+            <div className="flex items-center justify-center gap-2 mt-4 text-xs text-slate-400 opacity-80">
+                <ShieldCheck className="w-3 h-3" />
+                <span>Secure Payment Processing</span>
+            </div>
         </div>
       </div>
     </div>

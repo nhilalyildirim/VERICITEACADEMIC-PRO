@@ -14,6 +14,7 @@ import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationWithCrossref } from './services/academicService';
 import { storageService, INACTIVITY_LIMIT_MS } from './services/storageService';
+import { authService } from './services/authService';
 import { db } from './services/database'; 
 import { User, AnalysisReport, VerificationStatus, Citation } from './types';
 import { MAX_FREE_ANALYSIS } from './constants';
@@ -34,10 +35,10 @@ const App: React.FC = () => {
 
   // --- STATE WITH PERSISTENCE INITIALIZATION ---
   
-  const [user, setUser] = useState<User | null>(() => storageService.getUserSession());
+  const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
   
   const [analysisCount, setAnalysisCount] = useState<number>(() => {
-    const sessionUser = storageService.getUserSession();
+    const sessionUser = authService.getCurrentUser();
     if (sessionUser) return sessionUser.analysisCount;
     return storageService.getGuestUsage();
   });
@@ -79,8 +80,7 @@ const App: React.FC = () => {
   // --- PUBLIC APP LOGIC ---
 
   const handleLogout = () => {
-      if (user) db.logEvent('INFO', `User logged out: ${user.id}`);
-      storageService.clearSession();
+      authService.logoutUser();
       setUser(null);
       setAnalysisCount(storageService.getGuestUsage());
       setView('home');
@@ -89,43 +89,32 @@ const App: React.FC = () => {
   const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade', rememberMe: boolean = false) => {
     setIsAuthModalOpen(false);
     
-    if (mode === 'upgrade') {
-        setView('pricing');
-        return;
+    // Auth service handles storage, we just need to update React state
+    const currentUser = authService.getCurrentUser();
+    if (currentUser) {
+        setUser(currentUser);
+        setAnalysisCount(currentUser.analysisCount);
     }
 
-    const userId = 'u_' + Math.random().toString(36).substr(2, 5);
-    const mockUser: User = { 
-        id: userId, 
-        isPremium: false, 
-        analysisCount: 0,
-        subscriptionStatus: 'none'
-    };
-
-    db.ensureUser(mockUser, 'user@example.com');
-    db.logEvent('INFO', `User logged in: ${userId}`);
-
-    storageService.saveUserSession(mockUser, rememberMe);
-    setUser(mockUser);
-    setAnalysisCount(mockUser.analysisCount);
-    setView('dashboard');
+    if (mode === 'upgrade') {
+        setView('pricing');
+    } else {
+        setView('dashboard');
+    }
   };
 
   const handleSubscriptionSuccess = () => {
-      // Logic has moved to subscriptionService/db
-      // Frontend just needs to reload user state from DB source of truth
+      // Backend webhook has fired (simulated).
+      // Reload user from DB Source of Truth to get new 'active' status
       if (!user) return;
-
-      // Fetch latest user data (Pro status, subscription status) from DB
-      const updatedUser = db.getUser(user.id) as User;
+      const updatedUser = db.getUser(user.id);
       
       if (updatedUser) {
           setUser(updatedUser);
-          // Persist updated session
+          // Persist the updated session (keep rememberMe preference implicitly via storage logic)
           const isLocal = !!localStorage.getItem('vericite_user_session_v1');
           storageService.saveUserSession(updatedUser, isLocal);
           
-          alert("Successfully upgraded to Pro!");
           setView('billing'); 
       }
   };

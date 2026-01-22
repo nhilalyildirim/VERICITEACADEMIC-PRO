@@ -18,7 +18,7 @@ export const AdminPanel: React.FC = () => {
 
         // Access Control Logic
         const checkAccess = () => {
-            const isAuth = authService.isAuthenticated();
+            const isAuth = authService.isAdminAuthenticated();
             
             if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') {
                 // Redirect root admin to login or dashboard
@@ -75,7 +75,7 @@ const AdminLogin: React.FC<{ onLoginSuccess: () => void }> = ({ onLoginSuccess }
         setLoading(true);
 
         try {
-            const success = await authService.login(username, password);
+            const success = await authService.loginAdmin(username, password);
             if (success) {
                 // Update URL without reload
                 window.history.pushState({}, '', '/admin/dashboard');
@@ -162,7 +162,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     }, []);
 
     const handleLogout = () => {
-        authService.logout();
+        authService.logoutAdmin();
         window.history.pushState({}, '', '/admin/login');
         onLogout();
     };
