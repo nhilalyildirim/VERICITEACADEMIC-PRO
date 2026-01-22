@@ -86,7 +86,7 @@ const App: React.FC = () => {
       setView('home');
   };
 
-  const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade', rememberMe: boolean = false) => {
+  const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade') => {
     setIsAuthModalOpen(false);
     
     // Auth service handles storage, we just need to update React state

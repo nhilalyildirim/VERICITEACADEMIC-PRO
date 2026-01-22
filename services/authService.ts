@@ -53,15 +53,14 @@ export const authService = {
         await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network
 
         // In a real app, verify hash. Here we simulate success for demo.
-        // We find the user by email or create a mock one if it doesn't exist for demo purposes
-        // Note: In production, you would NEVER auto-create on login.
+        if (!password) {
+             return { success: false, error: "Password required" };
+        }
         
-        let user = db.getUserByEmail(email); // Need to add this helper to DB or just search
+        let user = db.getUserByEmail(email); 
         
         // DEMO LOGIC: If user doesn't exist, we reject login (Standard SaaS behavior)
         // unless it's a specific demo account.
-        // For this specific prompt requirement "Actually work", we'll allow login to succeed 
-        // if the user registered before, OR we'll simulate a successful login for any valid email format for demo ease.
         
         if (!email.includes('@')) {
              return { success: false, error: "Invalid email format." };
