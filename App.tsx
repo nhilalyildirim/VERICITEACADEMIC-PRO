@@ -50,6 +50,37 @@ const App: React.FC = () => {
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
 
+  // --- OAUTH CALLBACK HANDLER ---
+  useEffect(() => {
+      // Check if we are returning from an OAuth provider
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+
+      if (code && state) {
+          // Prevent processing loops
+          window.history.replaceState({}, '', window.location.pathname);
+          
+          const processOAuth = async () => {
+              try {
+                  const result = await authService.handleOAuthCallback(code, state);
+                  if (result.success && result.user) {
+                      setUser(result.user);
+                      setAnalysisCount(result.user.analysisCount);
+                      setView('dashboard');
+                      // Optional: Show success notification
+                  } else {
+                      alert(result.error || "Authentication failed.");
+                  }
+              } catch (e) {
+                  console.error("OAuth processing error", e);
+                  alert("Failed to process login.");
+              }
+          };
+          processOAuth();
+      }
+  }, []);
+
   if (isAdminRoute) {
       return <AdminPanel />;
   }

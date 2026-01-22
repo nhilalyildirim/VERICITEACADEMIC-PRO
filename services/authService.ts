@@ -1,4 +1,3 @@
-
 import { db } from './database';
 import { User } from '../types';
 import { storageService } from './storageService';
@@ -6,14 +5,40 @@ import { storageService } from './storageService';
 const ADMIN_USER = "NHYA";
 const ADMIN_PASSWORD = "239486*";
 const ADMIN_SESSION_KEY = "vericite_admin_token";
+const OAUTH_STATE_KEY = "vericite_oauth_state";
+const OAUTH_PROVIDER_KEY = "vericite_oauth_provider";
 
-// OAuth Configuration (Simulated Environment Variables)
-// In a real deployment, these would come from process.env
-const AUTH_CONFIG = {
-    GOOGLE: { enabled: true, clientId: 'mock_google_id' },
-    MICROSOFT: { enabled: true, clientId: 'mock_ms_id' },
-    ORCID: { enabled: true, clientId: 'mock_orcid_id' },
-    GITHUB: { enabled: false, clientId: '' } // Example of disabled provider
+// --- REAL OAUTH CONFIGURATION ---
+// In production, these clientIds must be populated via process.env
+// If a clientId is empty, the provider button will be HIDDEN automatically.
+
+interface AuthProviderConfig {
+    enabled: boolean;
+    clientId: string;
+    authEndpoint: string;
+    scope: string;
+    tokenEndpoint?: string; // For backend usage
+}
+
+const AUTH_CONFIG: Record<string, AuthProviderConfig> = {
+    GOOGLE: { 
+        enabled: true, 
+        clientId: '', // Add your Google Client ID here
+        authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+        scope: 'openid email profile'
+    },
+    MICROSOFT: { 
+        enabled: true, 
+        clientId: '', // Add your Microsoft Client ID here
+        authEndpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+        scope: 'openid profile email'
+    },
+    ORCID: { 
+        enabled: true, 
+        clientId: '', // Add your ORCID Client ID here
+        authEndpoint: 'https://orcid.org/oauth/authorize',
+        scope: '/authenticate'
+    }
 };
 
 export const authService = {
@@ -39,36 +64,24 @@ export const authService = {
 
     // --- USER AUTH ---
 
-    /**
-     * Checks if a user session is active and valid.
-     */
     getCurrentUser: (): User | null => {
         return storageService.getUserSession();
     },
 
-    /**
-     * Standard Email/Password Login
-     */
     loginUser: async (email: string, password: string, rememberMe: boolean): Promise<{ success: boolean; user?: User; error?: string }> => {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network
+        await new Promise(resolve => setTimeout(resolve, 800)); // Simulate network
 
-        // In a real app, verify hash. Here we simulate success for demo.
         if (!password) {
              return { success: false, error: "Password required" };
         }
         
         let user = db.getUserByEmail(email); 
         
-        // DEMO LOGIC: If user doesn't exist, we reject login (Standard SaaS behavior)
-        // unless it's a specific demo account.
-        
         if (!email.includes('@')) {
              return { success: false, error: "Invalid email format." };
         }
 
         if (!user) {
-             // For UX demo smoothness, we won't block "wrong password" since we don't have a password DB.
-             // We will treat this as a "User not found" error.
              return { success: false, error: "Account not found. Please register." };
         }
 
@@ -77,9 +90,6 @@ export const authService = {
         return { success: true, user };
     },
 
-    /**
-     * User Registration
-     */
     registerUser: async (email: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> => {
         await new Promise(resolve => setTimeout(resolve, 1000));
         
@@ -100,41 +110,8 @@ export const authService = {
         };
 
         db.ensureUser(newUser, email);
-        storageService.saveUserSession(newUser, false); // Default to no remember on register
+        storageService.saveUserSession(newUser, false); 
         db.logEvent('INFO', `New user registered: ${newUser.id}`);
-        return { success: true, user: newUser };
-    },
-
-    /**
-     * OAuth Login Simulation
-     */
-    loginWithOAuth: async (provider: 'GOOGLE' | 'MICROSOFT' | 'ORCID'): Promise<{ success: boolean; user?: User; error?: string }> => {
-        // 1. Check Config
-        if (!AUTH_CONFIG[provider].enabled || !AUTH_CONFIG[provider].clientId) {
-            return { success: false, error: "Provider configuration missing." };
-        }
-
-        console.log(`[Auth] Initiating ${provider} OAuth flow...`);
-        
-        // 2. Simulate Popup / Redirect Delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        // 3. Simulate Callback Handling
-        // In real world: verify code, exchange for token, get user profile.
-        const mockEmail = `user_${Math.random().toString(36).substr(2,4)}@${provider.toLowerCase()}.com`;
-        
-        const newUser: User = {
-            id: `u_${provider.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}`,
-            isPremium: false,
-            analysisCount: 0,
-            subscriptionStatus: 'none'
-        };
-
-        // Upsert user (Login or Register logic for OAuth is often blended)
-        db.ensureUser(newUser, mockEmail);
-        storageService.saveUserSession(newUser, true); // OAuth usually implies persistent session
-        
-        db.logEvent('INFO', `User logged in via ${provider}: ${newUser.id}`);
         return { success: true, user: newUser };
     },
 
@@ -144,8 +121,107 @@ export const authService = {
         storageService.clearSession();
     },
 
+    // --- REAL OAUTH FLOW IMPLEMENTATION ---
+
+    getProviders: () => AUTH_CONFIG,
+
     /**
-     * Helper to expose config to UI components (to hide/show buttons)
+     * INITIATE OAUTH
+     * Redirects the browser to the provider's official authorization page.
+     * Uses the Authorization Code Flow.
      */
-    getProviders: () => AUTH_CONFIG
+    initiateOAuth: (providerKey: string) => {
+        const config = AUTH_CONFIG[providerKey];
+        if (!config || !config.enabled || !config.clientId) {
+            console.error("Provider not configured");
+            return;
+        }
+
+        // 1. Generate and store state to prevent CSRF
+        const state = Math.random().toString(36).substring(7);
+        sessionStorage.setItem(OAUTH_STATE_KEY, state);
+        sessionStorage.setItem(OAUTH_PROVIDER_KEY, providerKey);
+
+        // 2. Build Authorization URL
+        const redirectUri = window.location.origin; // Callback to this app
+        const params = new URLSearchParams({
+            client_id: config.clientId,
+            redirect_uri: redirectUri,
+            response_type: 'code',
+            scope: config.scope,
+            state: state,
+            prompt: 'select_account' 
+        });
+
+        // 3. Redirect Browser
+        console.log(`[Auth] Redirecting to ${providerKey}...`);
+        window.location.href = `${config.authEndpoint}?${params.toString()}`;
+    },
+
+    /**
+     * HANDLE CALLBACK
+     * Processes the code returned from the provider.
+     * 
+     * NOTE: In a full architecture, this function would take the 'code' and send it 
+     * to a backend API (e.g., /api/auth/callback) which would then exchange it 
+     * for a token using the Client Secret.
+     * 
+     * Since this is a frontend-only environment, we handle the "Exchange" simulation here
+     * to verify the flow mechanics without exposing a secret.
+     */
+    handleOAuthCallback: async (code: string, returnedState: string): Promise<{ success: boolean; user?: User; error?: string }> => {
+        const storedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+        const providerKey = sessionStorage.getItem(OAUTH_PROVIDER_KEY);
+
+        // Cleanup
+        sessionStorage.removeItem(OAUTH_STATE_KEY);
+        sessionStorage.removeItem(OAUTH_PROVIDER_KEY);
+
+        // 1. Validate State (CSRF Protection)
+        if (!storedState || storedState !== returnedState) {
+            return { success: false, error: "Security validation failed (State mismatch)." };
+        }
+
+        if (!providerKey || !AUTH_CONFIG[providerKey]) {
+            return { success: false, error: "Unknown authentication provider." };
+        }
+
+        // 2. Simulate Backend Token Exchange
+        // In a real backend: const token = await exchangeCodeForToken(code, clientSecret);
+        // In a real backend: const profile = await fetchUserProfile(token);
+        
+        console.log(`[Auth] Processing callback from ${providerKey}. Code received.`);
+        
+        // Simulating the delay of a backend exchange
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        // 3. Get or Create User (Account Linking)
+        // We simulate fetching a verified email from the provider
+        const mockEmail = `user_${code.substring(0, 5)}@${providerKey.toLowerCase()}.com`;
+        
+        // Check if user exists (Linking)
+        // Fix: Explicitly type 'user' as User | undefined to allow assignment of non-DbUser objects
+        let user: User | undefined = db.getUserByEmail(mockEmail);
+        
+        if (!user) {
+            // Create new user if not exists
+            user = {
+                id: `u_${providerKey.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}`,
+                isPremium: false,
+                analysisCount: 0,
+                subscriptionStatus: 'none'
+            };
+            db.ensureUser(user, mockEmail);
+            db.logEvent('INFO', `New account created via ${providerKey}: ${user.id}`);
+        } else {
+            db.logEvent('INFO', `Existing user logged in via ${providerKey}: ${user.id}`);
+        }
+
+        // 4. Create Session
+        if (user) {
+            storageService.saveUserSession(user, true); // OAuth implies persistent session
+        }
+        
+        return { success: true, user };
+    }
 };
