@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, Mail, Loader2, AlertCircle } from 'lucide-react';
 import { authService } from '../services/authService';
@@ -24,8 +25,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
   }, [initialMode, isOpen]);
 
   const handleOAuth = (provider: string) => {
-      // Initiates the Real Redirect Flow
-      // The app will reload after the provider redirects back
+      const providers = authService.getProviders();
+      const config = providers[provider];
+      
+      if (!config?.clientId) {
+          setError(`${provider} login is temporarily unavailable (Missing Configuration).`);
+          return;
+      }
+      
       authService.initiateOAuth(provider);
   };
 
@@ -56,11 +63,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
 
   const providers = authService.getProviders();
 
-  // Determine if any OAuth providers are configured
-  const hasConfiguredProviders = 
-      (providers.GOOGLE.enabled && providers.GOOGLE.clientId) ||
-      (providers.MICROSOFT.enabled && providers.MICROSOFT.clientId) ||
-      (providers.ORCID.enabled && providers.ORCID.clientId);
+  // ONLY render buttons for providers that have a configured Client ID
+  const availableProviders = Object.entries(providers).filter(([_, config]) => config.enabled && config.clientId);
+  const hasConfiguredProviders = availableProviders.length > 0;
 
   if (!isOpen) return null;
 
@@ -86,10 +91,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
                 </div>
             )}
 
-            {/* OAuth Buttons - ONLY Render if ClientID is configured */}
+            {/* OAuth Buttons - Dynamically hidden if IDs missing */}
             {hasConfiguredProviders && (
                 <div className="space-y-3 mb-6">
-                    {providers.GOOGLE.enabled && providers.GOOGLE.clientId && (
+                    {providers.GOOGLE.clientId && (
                         <button 
                             onClick={() => handleOAuth('GOOGLE')}
                             className="w-full border border-gray-300 bg-white text-gray-700 py-2.5 rounded-lg hover:bg-gray-50 font-medium flex items-center justify-center gap-3 transition-all active:scale-[0.99]"
@@ -104,7 +109,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
                         </button>
                     )}
                     
-                    {providers.MICROSOFT.enabled && providers.MICROSOFT.clientId && (
+                    {providers.MICROSOFT.clientId && (
                         <button 
                             onClick={() => handleOAuth('MICROSOFT')}
                             className="w-full border border-gray-300 bg-white text-gray-700 py-2.5 rounded-lg hover:bg-gray-50 font-medium flex items-center justify-center gap-3 transition-all active:scale-[0.99]"
@@ -120,7 +125,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
                         </button>
                     )}
 
-                    {providers.ORCID.enabled && providers.ORCID.clientId && (
+                    {providers.ORCID.clientId && (
                         <button 
                             onClick={() => handleOAuth('ORCID')}
                             className="w-full border border-gray-300 bg-white text-gray-700 py-2.5 rounded-lg hover:bg-gray-50 font-medium flex items-center justify-center gap-3 transition-all active:scale-[0.99]"
@@ -177,26 +182,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
                         minLength={6}
                     />
                 </div>
-                
-                {mode !== 'register' && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                        <input 
-                          id="remember_me" 
-                          type="checkbox" 
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                          checked={rememberMe}
-                          onChange={(e) => setRememberMe(e.target.checked)}
-                        />
-                        <label htmlFor="remember_me" className="ml-2 block text-sm text-gray-600 cursor-pointer select-none">
-                          Remember me
-                        </label>
-                    </div>
-                    <button type="button" className="text-sm text-blue-600 hover:text-blue-800 hover:underline">
-                        Forgot password?
-                    </button>
-                  </div>
-                )}
 
                 <button 
                     type="submit" 
