@@ -12,8 +12,8 @@ import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
-import { verifyCitationWithCrossref } from './services/academicService';
-import { storageService, INACTIVITY_LIMIT_MS } from './services/storageService';
+import { verifyCitationParallel } from './services/academicService';
+import { storageService } from './services/storageService';
 import { authService } from './services/authService';
 import { db } from './services/database'; 
 import { User, AnalysisReport, VerificationStatus, Citation } from './types';
@@ -22,26 +22,12 @@ import { MAX_FREE_ANALYSIS } from './constants';
 type ViewType = 'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billing' | 'privacy' | 'terms' | 'integrity';
 
 const App: React.FC = () => {
-  // ROUTING LOGIC
   const [isAdminRoute, setIsAdminRoute] = useState(window.location.pathname.startsWith('/admin'));
-
-  useEffect(() => {
-    const handlePopState = () => {
-        setIsAdminRoute(window.location.pathname.startsWith('/admin'));
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  // --- STATE WITH PERSISTENCE INITIALIZATION ---
   
+  // SESSION & USAGE
   const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
-  
-  const [analysisCount, setAnalysisCount] = useState<number>(() => {
-    const sessionUser = authService.getCurrentUser();
-    if (sessionUser) return sessionUser.analysisCount;
-    return storageService.getGuestUsage();
-  });
+  const [currentUserId] = useState(() => user ? user.id : db.getOrCreateGuestId());
+  const [analysisCount, setAnalysisCount] = useState<number>(() => db.getAnalysisCount(currentUserId));
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'upgrade'>('login');
@@ -50,104 +36,31 @@ const App: React.FC = () => {
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
 
-  // --- OAUTH CALLBACK HANDLER ---
+  // OAUTH CALLBACK
   useEffect(() => {
-      // Check if we are returning from an OAuth provider
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
       const state = params.get('state');
 
       if (code && state) {
-          // Prevent processing loops
           window.history.replaceState({}, '', window.location.pathname);
-          
-          const processOAuth = async () => {
-              try {
-                  const result = await authService.handleOAuthCallback(code, state);
-                  if (result.success && result.user) {
-                      setUser(result.user);
-                      setAnalysisCount(result.user.analysisCount);
-                      setView('dashboard');
-                      // Optional: Show success notification
-                  } else {
-                      alert(result.error || "Authentication failed.");
-                  }
-              } catch (e) {
-                  console.error("OAuth processing error", e);
-                  alert("Failed to process login.");
+          authService.handleOAuthCallback(code, state).then(res => {
+              if (res.success && res.user) {
+                  setUser(res.user);
+                  setAnalysisCount(res.user.analysisCount);
+                  setView('dashboard');
               }
-          };
-          processOAuth();
+          });
       }
   }, []);
 
-  if (isAdminRoute) {
-      return <AdminPanel />;
-  }
-
-  // --- SESSION MANAGEMENT ---
-  useEffect(() => {
-    if (!user) return;
-    const checkInactivity = () => {
-      const lastActive = storageService.getLastActiveTime();
-      if (lastActive > 0 && Date.now() - lastActive > INACTIVITY_LIMIT_MS) {
-        handleLogout();
-      }
-    };
-    const updateActivity = () => storageService.updateLastActive();
-    window.addEventListener('mousemove', updateActivity);
-    window.addEventListener('keydown', updateActivity);
-    window.addEventListener('click', updateActivity);
-    const interval = setInterval(checkInactivity, 60000);
-
-    return () => {
-      window.removeEventListener('mousemove', updateActivity);
-      window.removeEventListener('keydown', updateActivity);
-      window.removeEventListener('click', updateActivity);
-      clearInterval(interval);
-    };
-  }, [user]);
-
-  // --- PUBLIC APP LOGIC ---
+  if (isAdminRoute) return <AdminPanel />;
 
   const handleLogout = () => {
       authService.logoutUser();
       setUser(null);
-      setAnalysisCount(storageService.getGuestUsage());
+      setAnalysisCount(db.getAnalysisCount(db.getOrCreateGuestId()));
       setView('home');
-  };
-
-  const handleAuthSuccess = (mode: 'login' | 'register' | 'upgrade') => {
-    setIsAuthModalOpen(false);
-    
-    // Auth service handles storage, we just need to update React state
-    const currentUser = authService.getCurrentUser();
-    if (currentUser) {
-        setUser(currentUser);
-        setAnalysisCount(currentUser.analysisCount);
-    }
-
-    if (mode === 'upgrade') {
-        setView('pricing');
-    } else {
-        setView('dashboard');
-    }
-  };
-
-  const handleSubscriptionSuccess = () => {
-      // Backend webhook has fired (simulated).
-      // Reload user from DB Source of Truth to get new 'active' status
-      if (!user) return;
-      const updatedUser = db.getUser(user.id);
-      
-      if (updatedUser) {
-          setUser(updatedUser);
-          // Persist the updated session (keep rememberMe preference implicitly via storage logic)
-          const isLocal = !!localStorage.getItem('vericite_user_session_v1');
-          storageService.saveUserSession(updatedUser, isLocal);
-          
-          setView('billing'); 
-      }
   };
 
   const handleAnalysis = async (text: string) => {
@@ -158,50 +71,27 @@ const App: React.FC = () => {
     }
 
     setIsAnalyzing(true);
-    setCurrentReport(null);
-
     try {
+      // Step 1: Rapid Extraction
       const extractedRaw = await extractCitationsFromText(text);
-      if (!extractedRaw || extractedRaw.length === 0) {
-          alert("No citations found.");
+      if (extractedRaw.length === 0) {
+          alert("No citations identified in the text.");
           setIsAnalyzing(false);
           return;
       }
 
-      const BATCH_SIZE = 2; 
-      const verifiedCitations: Citation[] = [];
-
-      for (let i = 0; i < extractedRaw.length; i += BATCH_SIZE) {
-          const chunk = extractedRaw.slice(i, i + BATCH_SIZE);
-          try {
-            const chunkResults = await Promise.all(
-                chunk.map((item: any) => verifyCitationWithCrossref(item))
-            );
-            verifiedCitations.push(...chunkResults);
-          } catch (chunkError) {
-             console.error("Error processing chunk:", chunkError);
-             chunk.forEach((item: any) => {
-                 verifiedCitations.push({
-                     id: Math.random().toString(36).substr(2, 9),
-                     originalText: item.original_text || "Error processing",
-                     status: VerificationStatus.AMBIGUOUS,
-                     confidenceScore: 0,
-                     analysisNotes: "Analysis failed due to network error."
-                 } as Citation);
-             });
-          }
-
-          if (i + BATCH_SIZE < extractedRaw.length) {
-              await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-      }
+      // Step 2: Parallel Verification (Massive performance gain)
+      // Processes all citations concurrently while handling internal throttling
+      const verifiedCitations = await Promise.all(
+          extractedRaw.map(item => verifyCitationParallel(item))
+      );
 
       const verifiedCount = verifiedCitations.filter(c => c.status === VerificationStatus.VERIFIED).length;
       const hallucinatedCount = verifiedCitations.filter(c => c.status === VerificationStatus.HALLUCINATED).length;
-      const score = verifiedCitations.length === 0 ? 0 : Math.round((verifiedCount / verifiedCitations.length) * 100);
+      const score = Math.round((verifiedCount / verifiedCitations.length) * 100);
 
       const newReport: AnalysisReport = {
-        id: `RPT-${Math.floor(Math.random()*100000)}`,
+        id: `RPT-${Date.now().toString().slice(-6)}`,
         timestamp: Date.now(),
         totalCitations: verifiedCitations.length,
         verifiedCount,
@@ -210,31 +100,17 @@ const App: React.FC = () => {
         citations: verifiedCitations
       };
 
-      const newCount = analysisCount + 1;
-      setAnalysisCount(newCount);
-      
-      const userId = user ? user.id : 'guest';
-      
-      db.recordAnalysis(newReport, userId);
-      db.logEvent('INFO', `Analysis completed. ID: ${newReport.id} Score: ${score}`);
-
-      if (user) {
-          const updatedUser = { ...user, analysisCount: newCount };
-          setUser(updatedUser);
-          const isLocal = !!localStorage.getItem('vericite_user_session_v1');
-          storageService.saveUserSession(updatedUser, isLocal);
-      } else {
-          storageService.saveGuestUsage(newCount);
-      }
+      // Persistence
+      db.recordAnalysis(newReport, currentUserId);
+      setAnalysisCount(prev => prev + 1);
 
       setCurrentReport(newReport);
       setHistory(prev => [newReport, ...prev]);
       setView('report');
 
     } catch (error: any) {
-       console.error(error);
-       db.logEvent('ERROR', `Analysis failed: ${error.message}`);
-       alert(`Analysis failed: ${error.message || 'Unknown error'}. Please try again.`);
+       console.error("Analysis Error:", error);
+       alert(`Service Error: ${error.message || 'The AI model is currently overloaded. Please try again in a few seconds.'}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -242,98 +118,30 @@ const App: React.FC = () => {
 
   const renderContent = () => {
       switch(view) {
-          case 'pricing':
-              return (
-                <PricingPage 
-                    user={user}
-                    onBack={() => setView('home')} 
-                    onSubscribeSuccess={handleSubscriptionSuccess}
-                    onAuthReq={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
-                />
-              );
-          case 'billing':
-              return user ? (
-                  <BillingPage 
-                    user={user} 
-                    invoices={db.getUserInvoices(user.id)} 
-                    onBack={() => setView('dashboard')} 
-                  />
-              ) : <div className="text-center p-8">Please login to view billing details.</div>;
-          case 'support':
-              return <SupportPage onBack={() => setView('home')} />;
-          case 'privacy':
-              return <PrivacyPolicy onBack={() => setView('home')} />;
-          case 'terms':
-              return <TermsOfService onBack={() => setView('home')} />;
-          case 'integrity':
-              return <AcademicIntegrity onBack={() => setView('home')} />;
-          case 'dashboard':
-              return user ? (
-                  <Dashboard user={user} history={history} onNavigateHome={() => setView('home')} onViewReport={(r) => { setCurrentReport(r); setView('report'); }} />
-              ) : <div className="text-center p-8">Please login to view dashboard.</div>;
-          case 'report':
-              return currentReport ? (
-                  <AnalysisReportView report={currentReport} onReset={() => setView('home')} />
-              ) : <div>No report</div>;
+          case 'pricing': return <PricingPage user={user} onBack={() => setView('home')} onSubscribeSuccess={() => { const u = db.getUser(user!.id); setUser(u as any); setView('billing'); }} onAuthReq={() => { setAuthMode('register'); setIsAuthModalOpen(true); }} />;
+          case 'billing': return user ? <BillingPage user={user} invoices={db.getUserInvoices(user.id)} onBack={() => setView('dashboard')} /> : null;
+          case 'support': return <SupportPage onBack={() => setView('home')} />;
+          case 'dashboard': return user ? <Dashboard user={user} history={history} onNavigateHome={() => setView('home')} onViewReport={(r) => { setCurrentReport(r); setView('report'); }} /> : null;
+          case 'report': return currentReport ? <AnalysisReportView report={currentReport} onReset={() => setView('home')} /> : null;
           case 'home':
           default:
               return (
                 <div className="max-w-4xl mx-auto py-12">
-                    <div className="text-center mb-10">
-                        <h1 className="text-4xl font-bold text-gray-900 mb-4">
-                            VeriCite Academic
-                        </h1>
-                        <p className="text-lg text-gray-600">
-                            Verify citations, detect AI hallucinations, and check source integrity.
-                        </p>
+                    <div className="text-center mb-12">
+                        <h1 className="text-5xl font-extrabold text-slate-900 tracking-tight mb-4">VeriCite <span className="text-blue-600">Academic</span></h1>
+                        <p className="text-xl text-slate-600 font-medium">Professional AI Hallucination Detector for Researchers.</p>
                     </div>
-                    <InputSection 
-                        onAnalyze={handleAnalysis} 
-                        isAnalyzing={isAnalyzing}
-                        canUpload={!!user?.isPremium}
-                        onUpgradeReq={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }}
-                    />
+                    <InputSection onAnalyze={handleAnalysis} isAnalyzing={isAnalyzing} canUpload={!!user?.isPremium} onUpgradeReq={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }} />
                 </div>
               );
       }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans flex flex-col">
-      <Header 
-          user={user} 
-          currentView={view}
-          onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} 
-          onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
-          onLogout={handleLogout}
-          onNavigate={setView}
-          analysisCount={analysisCount}
-      />
-      <main className="container mx-auto px-4 flex-grow">
-        {renderContent()}
-      </main>
-      
-      <footer className="w-full border-t bg-white py-10 mt-16">
-          <div className="max-w-6xl mx-auto px-4 text-center">
-              <p className="text-sm font-semibold text-gray-700 mb-6">
-                  &copy; 2026 VeriCite Academic. All rights reserved.
-              </p>
-              <div className="flex flex-wrap justify-center gap-6 mt-8 text-xs text-gray-400">
-                  <button onClick={() => setView('privacy')} className="hover:text-blue-600 transition-colors">Privacy Policy</button>
-                  <span className="text-gray-300">|</span>
-                  <button onClick={() => setView('terms')} className="hover:text-blue-600 transition-colors">Terms of Service</button>
-                  <span className="text-gray-300">|</span>
-                  <button onClick={() => setView('integrity')} className="hover:text-blue-600 transition-colors">Academic Integrity Guidelines</button>
-              </div>
-          </div>
-      </footer>
-
-      <AuthModal 
-        isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)}
-        onAuthSuccess={handleAuthSuccess}
-        initialMode={authMode}
-      />
+    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans">
+      <Header user={user} currentView={view} onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }} onLogout={handleLogout} onNavigate={setView} analysisCount={analysisCount} />
+      <main className="container mx-auto px-4 flex-grow">{renderContent()}</main>
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={() => { setUser(authService.getCurrentUser()); setIsAuthModalOpen(false); setView('dashboard'); }} initialMode={authMode} />
     </div>
   );
 };
