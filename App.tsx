@@ -150,7 +150,29 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans">
       <Header user={user} currentView={view} onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }} onLogout={handleLogout} onNavigate={setView} analysisCount={analysisCount} />
-      <main className="container mx-auto px-4 flex-grow">{renderContent()}</main>
+      
+      <main className="container mx-auto px-4 flex-grow">
+          {renderContent()}
+      </main>
+
+      {/* Global Professional Footer - Corrected Layout */}
+      <footer className="border-t border-gray-100 bg-gray-50 py-12 mt-auto">
+          <div className="container mx-auto px-4 text-center">
+              <div className="text-slate-500 text-sm mb-4">
+                  © 2026 VeriCite Academic. All rights reserved. Professional verification for researchers.
+              </div>
+              <nav className="flex flex-wrap justify-center items-center gap-x-4 gap-y-2 text-sm font-medium text-slate-600">
+                  <button onClick={() => setView('privacy')} className="hover:text-blue-600 transition-colors">Privacy Policy</button>
+                  <span className="text-slate-300 hidden sm:inline" aria-hidden="true">|</span>
+                  <button onClick={() => setView('terms')} className="hover:text-blue-600 transition-colors">Terms of Service</button>
+                  <span className="text-slate-300 hidden sm:inline" aria-hidden="true">|</span>
+                  <button onClick={() => setView('integrity')} className="hover:text-blue-600 transition-colors">Academic Integrity</button>
+                  <span className="text-slate-300 hidden sm:inline" aria-hidden="true">|</span>
+                  <button onClick={() => setView('support')} className="hover:text-blue-600 transition-colors">Support Center</button>
+              </nav>
+          </div>
+      </footer>
+
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={() => { setUser(authService.getCurrentUser()); setIsAuthModalOpen(false); setView('dashboard'); }} initialMode={authMode} />
     </div>
   );
