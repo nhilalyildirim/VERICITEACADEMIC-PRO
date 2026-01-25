@@ -183,6 +183,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthSuc
                     />
                 </div>
 
+                <div className="flex items-center justify-between px-1">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                        <input 
+                            type="checkbox" 
+                            checked={rememberMe}
+                            onChange={(e) => setRememberMe(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 transition-colors"
+                        />
+                        <span className="text-sm text-gray-600 group-hover:text-gray-900 transition-colors">Remember me</span>
+                    </label>
+                    {mode === 'login' && (
+                        <button type="button" className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                            Forgot password?
+                        </button>
+                    )}
+                </div>
+
                 <button 
                     type="submit" 
                     disabled={loading}
