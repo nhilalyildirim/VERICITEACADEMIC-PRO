@@ -14,7 +14,7 @@ const calcSimilarity = (s1: string, s2: string): number => {
 };
 
 export const verifyCitationParallel = async (extracted: any): Promise<Citation> => {
-  const { title, author, year, doi } = extracted;
+  const { title, author, doi } = extracted;
 
   // 1. Parallel Task Initiation
   const crossrefPromise = (async () => {

@@ -116,7 +116,7 @@ class DatabaseService {
     }
 
     // Fix: Implement activateSubscription and generate a mock invoice
-    activateSubscription(userId: string, planId: string): DbUser | undefined {
+    activateSubscription(userId: string, _planId: string): DbUser | undefined {
         const user = this.db.users.find(u => u.id === userId);
         if (user) {
             user.isPremium = true;

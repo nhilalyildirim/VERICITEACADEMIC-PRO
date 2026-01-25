@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, AlertTriangle, HelpCircle, ChevronDown, ChevronUp, ExternalLink, Copy, Loader2, Globe, Database } from 'lucide-react';
+import { Check, AlertTriangle, HelpCircle, ChevronDown, ChevronUp, ExternalLink, Copy, Loader2 } from 'lucide-react';
 import { Citation, VerificationStatus } from '../types';
 import { reformatCitation } from '../services/geminiService';
 

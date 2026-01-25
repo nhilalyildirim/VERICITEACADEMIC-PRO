@@ -13,10 +13,9 @@ import { TermsOfService } from './components/legal/TermsOfService';
 import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationParallel } from './services/academicService';
-import { storageService } from './services/storageService';
 import { authService } from './services/authService';
 import { db } from './services/database'; 
-import { User, AnalysisReport, VerificationStatus, Citation } from './types';
+import { User, AnalysisReport, VerificationStatus } from './types';
 import { MAX_FREE_ANALYSIS } from './constants';
 
 type ViewType = 'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billing' | 'privacy' | 'terms' | 'integrity';
@@ -52,6 +51,14 @@ const App: React.FC = () => {
               }
           });
       }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+        setIsAdminRoute(window.location.pathname.startsWith('/admin'));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   if (isAdminRoute) return <AdminPanel />;
@@ -123,6 +130,9 @@ const App: React.FC = () => {
           case 'support': return <SupportPage onBack={() => setView('home')} />;
           case 'dashboard': return user ? <Dashboard user={user} history={history} onNavigateHome={() => setView('home')} onViewReport={(r) => { setCurrentReport(r); setView('report'); }} /> : null;
           case 'report': return currentReport ? <AnalysisReportView report={currentReport} onReset={() => setView('home')} /> : null;
+          case 'privacy': return <PrivacyPolicy onBack={() => setView('home')} />;
+          case 'terms': return <TermsOfService onBack={() => setView('home')} />;
+          case 'integrity': return <AcademicIntegrity onBack={() => setView('home')} />;
           case 'home':
           default:
               return (

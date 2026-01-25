@@ -1,4 +1,4 @@
-import { db, DbUser } from './database';
+import { db } from './database';
 import { User } from '../types';
 import { storageService } from './storageService';
 
@@ -121,14 +121,14 @@ export const authService = {
         return { success: true, user: user as User };
     },
 
-    loginUser: async (email: string, pass: string, remember: boolean): Promise<any> => {
+    loginUser: async (email: string, _pass: string, remember: boolean): Promise<any> => {
         const user = db.getUserByEmail(email);
         if (!user) return { success: false, error: "User not found." };
         storageService.saveUserSession(user as User, remember);
         return { success: true, user };
     },
 
-    registerUser: async (email: string, pass: string): Promise<any> => {
+    registerUser: async (email: string, _pass: string): Promise<any> => {
         if (db.getUserByEmail(email)) return { success: false, error: "Email already in use." };
         const user: User = { id: `u_${Math.random().toString(36).substr(2,9)}`, isPremium: false, analysisCount: 0, subscriptionStatus: 'none' };
         db.ensureUser(user, email);
