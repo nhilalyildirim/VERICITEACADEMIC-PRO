@@ -78,7 +78,14 @@ export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified:
     });
 
     const chunk = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.find((c: any) => c.web?.uri);
-    return chunk ? { verified: true, title: chunk.web.title, url: chunk.web.uri } : { verified: false };
+    if (chunk && chunk.web) {
+        return { 
+            verified: true, 
+            title: chunk.web.title, 
+            url: chunk.web.uri 
+        };
+    }
+    return { verified: false };
   }, 1, 400);
 };
 

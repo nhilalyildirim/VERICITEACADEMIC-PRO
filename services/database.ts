@@ -175,7 +175,8 @@ class DatabaseService {
             .select('*')
             .order('created_at', { ascending: false })
             .limit(10);
-        return (data || []).map(a => ({
+        
+        return (data || []).map((a: any) => ({
             id: a.id,
             userId: a.user_id,
             citationCount: a.citation_count,

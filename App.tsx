@@ -7,7 +7,6 @@ import { Dashboard } from './components/Dashboard';
 import { AuthModal } from './components/AuthModal';
 import { SupportPage } from './components/SupportPage';
 import { PricingPage } from './components/PricingPage';
-import { AdminPanel } from './components/AdminPanel';
 import { BillingPage } from './components/BillingPage';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
@@ -27,7 +26,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billing' | 'privacy' | 'terms' | 'integrity'>('home');
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
-  const [isConfigMissing, setIsConfigMissing] = useState(!db.isReady());
+  const isConfigMissing = !db.isReady();
 
   useEffect(() => {
     if (db.isReady()) {

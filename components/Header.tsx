@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, HelpCircle, CreditCard, Gem } from 'lucide-react';
+import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, CreditCard, Gem } from 'lucide-react';
 import { User as UserType } from '../types';
 
 interface HeaderProps {

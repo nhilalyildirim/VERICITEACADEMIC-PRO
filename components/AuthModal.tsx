@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Mail, Loader2, AlertCircle } from 'lucide-react';
+import { X, Loader2, AlertCircle } from 'lucide-react';
 import { authService } from '../services/authService';
 
 interface AuthModalProps {
