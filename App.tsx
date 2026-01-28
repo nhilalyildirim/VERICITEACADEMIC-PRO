@@ -1,5 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
+import { Footer } from './components/Footer';
 import { InputSection } from './components/InputSection';
 import { AnalysisReportView } from './components/AnalysisReport';
 import { Dashboard } from './components/Dashboard';
@@ -13,9 +15,10 @@ import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationParallel } from './services/academicService';
 import { authService } from './services/authService';
+import { storageService } from './services/storageService';
 import { db } from './services/database'; 
 import { User, AnalysisReport, VerificationStatus } from './types';
-import { AlertCircle } from 'lucide-react';
+import { CloudOff } from 'lucide-react';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
@@ -26,108 +29,171 @@ const App: React.FC = () => {
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
   
-  const isConfigMissing = !db.isReady();
+  const isCloudConnected = db.isReady();
 
   useEffect(() => {
-    if (db.isReady()) {
+    if (isCloudConnected) {
         authService.handleAuthRedirect().then(profile => {
             if (profile) setUser(profile);
         });
     }
-  }, []);
+  }, [isCloudConnected]);
 
   const handleAnalysis = async (text: string) => {
-    if (!db.isReady() || !user) {
-        setAuthMode('login');
-        setIsAuthModalOpen(true);
-        return;
+    // 1. CREDIT VALIDATION (Atomic for Users, Local for Guests)
+    if (user) {
+        const success = await db.deductCredit(user.id);
+        if (!success) {
+            alert("No credits remaining in your account. Upgrade to Pro for unlimited scans.");
+            setView('pricing');
+            return;
+        }
+    } else {
+        // GUEST MODE: 5-scan limit via Local Storage
+        const guestUsage = storageService.getGuestUsage();
+        if (guestUsage >= 5) {
+            alert("Guest limit reached. Please sign in for more scans or upgrade to Pro.");
+            setAuthMode('login');
+            setIsAuthModalOpen(true);
+            return;
+        }
+        storageService.saveGuestUsage(guestUsage + 1);
     }
 
     setIsAnalyzing(true);
     try {
-      // 1. ATOMIC CREDIT DEDUCTION (Source of Truth)
-      const success = await db.deductCredit(user.id);
-      if (!success) {
-          alert("No credits remaining. Upgrade to Pro for unlimited scans.");
-          setView('pricing');
-          setIsAnalyzing(false);
-          return;
-      }
+        // AI extraction of citations
+        const citations = await extractCitationsFromText(text);
+        if (!citations || citations.length === 0) {
+            alert("No citations were found in the provided text.");
+            setIsAnalyzing(false);
+            return;
+        }
 
-      // 2. High-Speed Citation Extraction
-      const citations = await extractCitationsFromText(text);
-      if (citations.length === 0) {
-          alert("No academic citations detected.");
-          setIsAnalyzing(false);
-          return;
-      }
+        // Parallel verification across academic indices
+        const verifiedCitations = await Promise.all(
+            citations.map(c => verifyCitationParallel(c))
+        );
 
-      // 3. Optimized Parallel Verification (Batching to prevent 429)
-      const results = [];
-      const BATCH_SIZE = 12; // Massive parallelization for speed
-      for (let i = 0; i < citations.length; i += BATCH_SIZE) {
-          const batch = citations.slice(i, i + BATCH_SIZE);
-          const batchResults = await Promise.all(batch.map(c => verifyCitationParallel(c)));
-          results.push(...batchResults);
-          if (i + BATCH_SIZE < citations.length) await new Promise(r => setTimeout(r, 150));
-      }
+        const verifiedCount = verifiedCitations.filter(c => c.status === VerificationStatus.VERIFIED).length;
+        const hallucinatedCount = verifiedCitations.filter(c => c.status === VerificationStatus.HALLUCINATED).length;
+        
+        const report: AnalysisReport = {
+            id: Math.random().toString(36).substr(2, 9).toUpperCase(),
+            timestamp: Date.now(),
+            totalCitations: verifiedCitations.length,
+            verifiedCount,
+            hallucinatedCount,
+            overallTrustScore: Math.round((verifiedCount / verifiedCitations.length) * 100),
+            citations: verifiedCitations
+        };
 
-      const verifiedCount = results.filter(r => r.status === VerificationStatus.VERIFIED).length;
-      const score = Math.round((verifiedCount / results.length) * 100);
+        setCurrentReport(report);
+        setHistory(prev => [report, ...prev]);
+        setView('report');
 
-      const report: AnalysisReport = {
-        id: `VC-${Date.now().toString().slice(-6)}`,
-        timestamp: Date.now(),
-        totalCitations: results.length,
-        verifiedCount,
-        hallucinatedCount: results.length - verifiedCount,
-        overallTrustScore: score,
-        citations: results
-      };
-
-      // 4. Persistence
-      await db.recordAnalysis(report, user.id);
-      const updatedProfile = await db.getUserProfile(user.id);
-      if (updatedProfile) setUser(updatedProfile);
-
-      setCurrentReport(report);
-      setHistory(prev => [report, ...prev]);
-      setView('report');
-
-    } catch (e: any) {
-       alert("Scanning engine error. Check your internet or Gemini key.");
+        if (user) {
+            await db.recordAnalysis(report, user.id);
+        }
+    } catch (error) {
+        console.error("Analysis sequence failure:", error);
+        alert("Verification engine encountered an error. Please try again.");
     } finally {
-      setIsAnalyzing(false);
+        setIsAnalyzing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col font-sans">
-      <Header user={user} currentView={view} onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }} onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }} onLogout={async () => { await authService.logoutUser(); setUser(null); setView('home'); }} onNavigate={setView} analysisCount={user?.analysisCount || 0} />
-      <main className="container mx-auto px-4 flex-grow">
-          {view === 'pricing' && <PricingPage user={user} onBack={() => setView('home')} onSubscribeSuccess={() => setView('billing')} onAuthReq={() => { setAuthMode('register'); setIsAuthModalOpen(true); }} />}
-          {view === 'billing' && user && <BillingPage user={user} invoices={[]} onBack={() => setView('dashboard')} />}
-          {view === 'support' && <SupportPage onBack={() => setView('home')} />}
-          {view === 'dashboard' && user && <Dashboard user={user} history={history} onNavigateHome={() => setView('home')} onViewReport={(r) => { setCurrentReport(r); setView('report'); }} />}
-          {view === 'report' && currentReport && <AnalysisReportView report={currentReport} onReset={() => setView('home')} />}
-          {view === 'privacy' && <PrivacyPolicy onBack={() => setView('home')} />}
-          {view === 'terms' && <TermsOfService onBack={() => setView('home')} />}
-          {view === 'integrity' && <AcademicIntegrity onBack={() => setView('home')} />}
-          {view === 'home' && (
-            <div className="max-w-4xl mx-auto py-12">
-                {isConfigMissing && <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg flex gap-2"><AlertCircle /> Configuration Missing. Check Vercel Environment Variables.</div>}
-                <div className="text-center mb-12">
-                    <h1 className="text-5xl font-extrabold text-slate-900 mb-4">VeriCite <span className="text-blue-600 font-light">Academic</span></h1>
-                    <p className="text-xl text-slate-600">The Scholarly Anti-Hallucination Engine.</p>
-                </div>
-                <InputSection onAnalyze={handleAnalysis} isAnalyzing={isAnalyzing} canUpload={!!user?.isPremium} onUpgradeReq={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }} />
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <Header 
+        user={user} 
+        currentView={view}
+        analysisCount={history.length}
+        onLogin={() => { setAuthMode('login'); setIsAuthModalOpen(true); }}
+        onRegister={() => { setAuthMode('register'); setIsAuthModalOpen(true); }}
+        onLogout={() => { authService.logoutUser(); setUser(null); setView('home'); }}
+        onNavigate={(v) => setView(v)}
+      />
+
+      <main className="flex-grow container mx-auto px-4 py-8">
+        {!isCloudConnected && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3 text-amber-800 text-sm">
+                <CloudOff className="w-5 h-5" />
+                <span>Cloud disconnected: Running in local guest mode.</span>
             </div>
-          )}
+        )}
+
+        {view === 'home' && (
+          <div className="max-w-4xl mx-auto py-12 text-center">
+            <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">
+              Academic Integrity, <span className="text-blue-600">Verified.</span>
+            </h1>
+            <p className="text-lg text-slate-600 max-w-2xl mx-auto mb-10">
+              The professional anti-hallucination engine. Paste your text or upload documents to identify fabricated citations.
+            </p>
+            <InputSection 
+              onAnalyze={handleAnalysis} 
+              isAnalyzing={isAnalyzing}
+              canUpload={user?.isPremium || false}
+              onUpgradeReq={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }}
+            />
+          </div>
+        )}
+
+        {view === 'report' && currentReport && (
+          <AnalysisReportView report={currentReport} onReset={() => setView('home')} />
+        )}
+
+        {view === 'dashboard' && user && (
+          <Dashboard 
+            user={user} 
+            history={history} 
+            onNavigateHome={() => setView('home')} 
+            onViewReport={(r) => { setCurrentReport(r); setView('report'); }} 
+          />
+        )}
+
+        {view === 'support' && <SupportPage onBack={() => setView('home')} />}
+        
+        {view === 'pricing' && (
+          <PricingPage 
+            user={user} 
+            onBack={() => setView('home')} 
+            onSubscribeSuccess={async () => {
+              if (user) {
+                const profile = await db.getUserProfile(user.id);
+                setUser(profile);
+                setView('home');
+              }
+            }}
+            onAuthReq={() => { setAuthMode('login'); setIsAuthModalOpen(true); }}
+          />
+        )}
+
+        {view === 'billing' && user && (
+          <BillingPage user={user} invoices={[]} onBack={() => setView('dashboard')} />
+        )}
+
+        {view === 'privacy' && <PrivacyPolicy onBack={() => setView('home')} />}
+        {view === 'terms' && <TermsOfService onBack={() => setView('home')} />}
+        {view === 'integrity' && <AcademicIntegrity onBack={() => setView('home')} />}
       </main>
-      <footer className="py-8 border-t border-gray-100 text-center text-xs text-gray-400 font-bold uppercase tracking-widest">VeriCite Academic | High Speed Production</footer>
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onAuthSuccess={() => setIsAuthModalOpen(false)} initialMode={authMode} />
+
+      <Footer onNavigate={setView} />
+
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+        initialMode={authMode}
+        onAuthSuccess={async () => {
+           const profile = authService.getCurrentUser();
+           setUser(profile);
+           setIsAuthModalOpen(false);
+        }}
+      />
     </div>
   );
 };
 
+// Fixed: Added default export for index.tsx to consume
 export default App;

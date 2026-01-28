@@ -1,11 +1,10 @@
+
 import React, { useState } from 'react';
 import { Upload, FileText, X, Search, Loader2 } from 'lucide-react';
 import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Fix for ESM import of pdfjs-dist
-// The module namespace import (* as pdfjsLib) might have the actual library in .default
-// or be flattened depending on the bundler/CDN.
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
 
 // Initialize PDF Worker
@@ -26,7 +25,12 @@ export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzi
   const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!canUpload) { onUpgradeReq(); return; }
+    // Check if the user is allowed to upload (Premium only)
+    if (!canUpload) { 
+        onUpgradeReq(); 
+        return; 
+    }
+    
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -36,13 +40,10 @@ export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzi
     try {
         if (file.name.endsWith('.docx')) {
             const arrayBuffer = await file.arrayBuffer();
-            // Mammoth usually has extractRawText on the default export or named.
             const result = await mammoth.extractRawText({ arrayBuffer });
             setText(result.value);
         } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
             const arrayBuffer = await file.arrayBuffer();
-            
-            // Use the resolved 'pdfjs' object which has getDocument
             const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
             const pdf = await loadingTask.promise;
             
@@ -78,26 +79,28 @@ export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzi
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">Input Text</h2>
-        <div className="relative mb-4">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Scholarly Text Input</h2>
+        <div className="relative mb-6">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={isProcessingFile ? "Reading file..." : "Paste your citations or text here..."}
-            className="w-full h-48 p-4 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y font-mono text-sm"
+            placeholder={isProcessingFile ? "Deciphering manuscript..." : "Paste your citations or paper content here to identify hallucinations..."}
+            className="w-full h-64 p-5 border border-gray-200 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none resize-none font-mono text-sm leading-relaxed transition-all"
             disabled={isAnalyzing || isProcessingFile}
           />
           {fileName && (
-              <div className="absolute top-2 right-2 bg-gray-100 px-2 py-1 rounded text-xs flex items-center gap-1 border">
-                  <FileText className="w-3 h-3" />
+              <div className="absolute top-3 right-3 bg-white/90 backdrop-blur shadow-sm px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border border-gray-200">
+                  <FileText className="w-3.5 h-3.5 text-blue-600" />
                   {fileName}
-                  <button onClick={() => { setFileName(null); setText(''); }}><X className="w-3 h-3 hover:text-red-500" /></button>
+                  <button onClick={() => { setFileName(null); setText(''); }} className="hover:text-red-600 transition-colors">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
               </div>
           )}
         </div>
 
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
                  <input
                     type="file"
@@ -109,7 +112,7 @@ export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzi
                  />
                  <label 
                     htmlFor="file-upload"
-                    className={`flex items-center gap-2 text-sm cursor-pointer hover:text-blue-600 ${(!canUpload || isAnalyzing || isProcessingFile) ? 'opacity-50 pointer-events-none' : ''}`}
+                    className={`flex items-center gap-2.5 text-sm font-bold py-2 px-4 rounded-lg transition-all ${(!canUpload || isAnalyzing || isProcessingFile) ? 'text-gray-400 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-50 cursor-pointer'}`}
                     onClick={(e) => { if (!canUpload) { e.preventDefault(); onUpgradeReq(); } }}
                  >
                     {isProcessingFile ? (
@@ -117,17 +120,17 @@ export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzi
                     ) : (
                         <Upload className="w-4 h-4" />
                     )}
-                    {isProcessingFile ? 'Processing...' : (canUpload ? 'Upload .txt, .pdf, .docx' : 'Upload file (Premium)')}
+                    {isProcessingFile ? 'Analyzing File...' : (canUpload ? 'Upload .pdf, .docx, .txt' : 'File Upload (Pro Only)')}
                  </label>
             </div>
 
             <button
                 onClick={() => onAnalyze(text)}
-                disabled={isAnalyzing || isProcessingFile || text.length < 5}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-md font-medium flex items-center gap-2 transition-colors"
+                disabled={isAnalyzing || isProcessingFile || text.trim().length < 10}
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white px-8 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-blue-600/10 active:scale-95"
             >
-                {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                {isAnalyzing ? 'Analyzing...' : 'Verify Citations'}
+                {isAnalyzing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+                {isAnalyzing ? 'Scanning Databases...' : 'Verify Academic Citations'}
             </button>
         </div>
     </div>

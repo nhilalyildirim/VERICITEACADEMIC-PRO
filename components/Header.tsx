@@ -2,6 +2,7 @@
 import React from 'react';
 import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, CreditCard, Gem } from 'lucide-react';
 import { User as UserType } from '../types';
+import { storageService } from '../services/storageService';
 
 interface HeaderProps {
     user: UserType | null;
@@ -13,8 +14,8 @@ interface HeaderProps {
     analysisCount: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate }) => {
-  const credits = user?.credits ?? 5;
+export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, analysisCount }) => {
+  const credits = user ? user.credits : (5 - storageService.getGuestUsage());
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
@@ -55,11 +56,11 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
           </nav>
 
           <div className="flex items-center gap-4">
-             {/* Persistent Credit Counter */}
-             {user && !user.isPremium && (
+             {/* Credit Counter (Guest or User) */}
+             {(!user || !user.isPremium) && (
                  <div className="hidden md:flex items-center px-3 py-1 rounded bg-slate-800 border border-slate-700">
-                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mr-2">Remaining</span>
-                     <span className="text-sm font-bold text-white">{credits} Scans</span>
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mr-2">{user ? 'Remaining' : 'Guest'}</span>
+                     <span className={`text-sm font-bold ${credits <= 0 ? 'text-red-400' : 'text-white'}`}>{credits} Scans</span>
                  </div>
              )}
 

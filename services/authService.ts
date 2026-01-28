@@ -9,12 +9,17 @@ export const authService = {
     getCurrentUser: (): User | null => storageService.getUserSession(),
 
     signInWithGoogle: async () => {
-        if (!supabase) throw new Error("Database connection (Supabase) is not configured. Please add NEXT_PUBLIC_SUPABASE_URL to your Vercel Environment Variables.");
+        if (!supabase) throw new Error("Supabase client is not initialized. Please configure your environment variables.");
         
+        // Use origin to ensure the redirect matches the current domain (e.g. vericite.vercel.app or localhost)
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin
+                redirectTo: `${window.location.origin}/`,
+                queryParams: {
+                    access_type: 'offline',
+                    prompt: 'select_account',
+                },
             }
         });
         if (error) throw error;
@@ -28,6 +33,7 @@ export const authService = {
         
         if (session?.user) {
             const authUser = session.user;
+            // Atomic user sync
             await db.ensureUserExists({ id: authUser.id, email: authUser.email || '' });
             
             const profile = await db.getUserProfile(authUser.id);

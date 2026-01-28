@@ -1,9 +1,11 @@
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AnalysisReport, User } from '../types';
 
-// Vercel / Vite Environment Variables
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
+// Vercel / Vite Environment Variables resolution
+// Explicitly check process.env (mapped in vite.config.ts) and import.meta.env (Vite standard)
+const supabaseUrl = process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
 // Fail-safe initialization: Strictly check for valid configuration
 const isConfigured = !!supabaseUrl && !!supabaseKey && supabaseUrl.startsWith('http');
@@ -13,7 +15,7 @@ const isConfigured = !!supabaseUrl && !!supabaseKey && supabaseUrl.startsWith('h
  * Shared across the entire application for auth and database operations.
  */
 export const supabase: SupabaseClient | null = isConfigured 
-    ? createClient(supabaseUrl!, supabaseKey!, {
+    ? createClient(supabaseUrl, supabaseKey, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -29,6 +31,10 @@ export interface DbInvoice {
 }
 
 class DatabaseService {
+    /**
+     * Checks if the cloud infrastructure is connected.
+     * If false, the app gracefully degrades to Guest Mode (Local Storage).
+     */
     public isReady(): boolean {
         return !!supabase;
     }
@@ -64,13 +70,11 @@ class DatabaseService {
     /**
      * ATOMIC CREDIT ENFORCEMENT
      * Deducts 1 credit from the database. 
-     * This is the source of truth for the 5-scan limit.
      */
     async deductCredit(userId: string): Promise<boolean> {
         if (!supabase) return false;
         
         try {
-            // Fetch fresh state to prevent stale local cache bypass
             const { data: profile, error: fetchError } = await supabase
                 .from('profiles')
                 .select('credits, is_premium')
