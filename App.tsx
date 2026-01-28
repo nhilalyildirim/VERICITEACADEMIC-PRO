@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { InputSection } from './components/InputSection';
@@ -26,6 +25,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billing' | 'privacy' | 'terms' | 'integrity'>('home');
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
+  
   const isConfigMissing = !db.isReady();
 
   useEffect(() => {
