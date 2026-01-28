@@ -16,7 +16,6 @@ interface AuthProviderConfig {
 
 /**
  * AUTH CONFIGURATION
- * Buttons will only appear if these IDs are provided via environment variables.
  */
 const AUTH_CONFIG: Record<string, AuthProviderConfig> = {
     GOOGLE: { 
@@ -90,7 +89,7 @@ export const authService = {
 
     /**
      * HANDLE CALLBACK
-     * Only creates a session if the returned state matches the stored state.
+     * Finalizes the authentication flow after redirect.
      */
     handleOAuthCallback: async (code: string, returnedState: string): Promise<{ success: boolean; user?: User; error?: string }> => {
         const storedState = sessionStorage.getItem(OAUTH_STATE_KEY);
@@ -102,11 +101,14 @@ export const authService = {
         }
 
         try {
-            // In a real SaaS, we would POST the 'code' to our API here.
-            // For this frontend-only environment, we finalize the verification simulation.
-            await new Promise(r => setTimeout(r, 800));
+            // In a production app, the 'code' would be sent to the backend.
+            // Here, we simulate the exchange and user profile retrieval.
+            await new Promise(r => setTimeout(r, 1200));
             
-            const mockEmail = `user_${code.substring(0, 4)}@${providerKey?.toLowerCase()}.com`;
+            // Mocking identity extraction from the auth code/token
+            const mockIdentity = `user_${code.substring(0, 6)}`.toLowerCase();
+            const mockEmail = `${mockIdentity}@${providerKey?.toLowerCase()}.com`;
+            
             let user = db.getUserByEmail(mockEmail);
             
             if (!user) {
@@ -119,27 +121,47 @@ export const authService = {
                     lastLogin: Date.now()
                 };
                 db.ensureUser(user as User, mockEmail);
+            } else {
+                // Update existing user login time
+                user.lastLogin = Date.now();
+                db.ensureUser(user as User, mockEmail);
             }
 
-            storageService.saveUserSession(user as User, true);
-            db.logEvent('INFO', `OAuth successful for ${providerKey}: ${user.id}`);
+            // Persistence
+            storageService.saveUserSession(user as User, true); // OAuth usually implies "remember me"
+            db.logEvent('INFO', `OAuth login successful via ${providerKey}: ${user.email}`);
+            
+            // Cleanup state
+            sessionStorage.removeItem(OAUTH_STATE_KEY);
+            sessionStorage.removeItem(OAUTH_PROVIDER_KEY);
+            
             return { success: true, user: user as User };
         } catch (e) {
             db.logEvent('ERROR', `OAuth callback processing error: ${e}`);
-            return { success: false, error: "An error occurred during authentication. Please try again." };
+            return { success: false, error: "Authentication failed during processing. Please try again." };
         }
     },
 
     loginUser: async (email: string, _pass: string, remember: boolean): Promise<any> => {
         const user = db.getUserByEmail(email);
-        if (!user) return { success: false, error: "User not found." };
+        if (!user) return { success: false, error: "User record not found." };
+        
+        user.lastLogin = Date.now();
+        db.ensureUser(user as User, email);
         storageService.saveUserSession(user as User, remember);
         return { success: true, user };
     },
 
     registerUser: async (email: string, _pass: string): Promise<any> => {
-        if (db.getUserByEmail(email)) return { success: false, error: "Email already in use." };
-        const user: User = { id: `u_${Math.random().toString(36).substr(2,9)}`, isPremium: false, analysisCount: 0, subscriptionStatus: 'none' };
+        if (db.getUserByEmail(email)) return { success: false, error: "This email address is already registered." };
+        
+        const user: User = { 
+            id: `u_${Math.random().toString(36).substr(2,9)}`, 
+            isPremium: false, 
+            analysisCount: 0, 
+            subscriptionStatus: 'none',
+        };
+        
         db.ensureUser(user, email);
         storageService.saveUserSession(user, false);
         return { success: true, user };

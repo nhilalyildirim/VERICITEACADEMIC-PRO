@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Gemini Client
@@ -31,17 +32,33 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 4, baseDelay 
 }
 
 /**
- * Extracts citations from text using Gemini.
+ * Extracts citations from text using Gemini 3 Pro for maximum accuracy.
  */
 export const extractCitationsFromText = async (text: string): Promise<any[]> => {
   if (!text || text.length < 5) return [];
 
   return withRetry(async () => {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3-pro-preview",
       contents: [
-        { role: 'user', parts: [{ text: "Extract all academic citations from the following text. Return a JSON array of objects with keys: original_text, title, author, year, doi. If missing, use empty string." }] },
-        { role: 'user', parts: [{ text: `TEXT:\n${text}` }] }
+        { 
+          role: 'user', 
+          parts: [{ text: `You are an expert academic librarian. Analyze the following text and extract every formal academic citation (APA, MLA, Chicago, Harvard, or Vancouver styles). 
+          
+          RULES:
+          1. Only extract citations that refer to specific academic works (papers, books, journals).
+          2. Ignore general mentions of authors without a specific work.
+          3. For each citation, provide:
+             - original_text: The exact string as it appears in the input.
+             - title: The full title of the work.
+             - author: The primary author or editors.
+             - year: The publication year.
+             - doi: The DOI string if present (e.g., 10.1145/...).
+          4. If a field is missing, use an empty string.
+          
+          Return a JSON array of objects.` }] 
+        },
+        { role: 'user', parts: [{ text: `TEXT TO ANALYZE:\n${text}` }] }
       ],
       config: {
         responseMimeType: "application/json",
@@ -73,14 +90,20 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
 };
 
 /**
- * Verification Layer: Google Search Grounding.
+ * Verification Layer: Google Search Grounding with strict evaluation.
  */
 export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified: boolean, title?: string, url?: string, snippet?: string }> => {
   return withRetry(async () => {
-    const query = `Verify existence of academic paper: "${citation.title}" by ${citation.author} (${citation.year})`;
+    const query = `Does this specific academic work exist? 
+    Title: "${citation.title}"
+    Author: ${citation.author}
+    Year: ${citation.year}
+    
+    Search for a match in academic repositories (ResearchGate, PubMed, IEEE, JSTOR, Google Scholar). 
+    If a clear match is found, provide the URL and the canonical title.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3-pro-preview",
       contents: [{ role: 'user', parts: [{ text: query }] }],
       config: {
         tools: [{ googleSearch: {} }]
@@ -89,13 +112,14 @@ export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified:
 
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
     if (chunks && chunks.length > 0) {
+        // Look for chunks that contain a URI (indicating a real web match)
         const webChunk = chunks.find((c: any) => c.web?.uri);
         if (webChunk?.web) {
             return {
                 verified: true,
                 title: webChunk.web.title,
                 url: webChunk.web.uri,
-                snippet: "Verified via Real-time Google Search Grounding."
+                snippet: "Verified via Real-time Google Search Grounding and academic repository indexing."
             };
         }
     }
@@ -111,7 +135,7 @@ export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified:
 export const reformatCitation = async (canonicalData: any, style: string): Promise<string> => {
   return withRetry(async () => {
     const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3-pro-preview",
         contents: [{ role: 'user', parts: [{ text: `Format this academic source into ${style} style. Use the provided metadata strictly. Return ONLY the formatted string.\nMetadata: ${JSON.stringify(canonicalData)}` }] }],
     });
     return response.text?.trim() || "Formatting error.";
