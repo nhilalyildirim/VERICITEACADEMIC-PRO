@@ -23,9 +23,8 @@ type ViewType = 'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billi
 const App: React.FC = () => {
   const [isAdminRoute, setIsAdminRoute] = useState(window.location.pathname.startsWith('/admin'));
   
-  // SESSION & USAGE
   const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
-  const [currentUserId] = useState(() => user ? user.id : db.getOrCreateGuestId());
+  const [currentUserId, setCurrentUserId] = useState(() => user ? user.id : db.getOrCreateGuestId());
   const [analysisCount, setAnalysisCount] = useState<number>(() => db.getAnalysisCount(currentUserId));
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -35,7 +34,15 @@ const App: React.FC = () => {
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
 
-  // OAUTH CALLBACK
+  // Robust Identity Sync
+  useEffect(() => {
+      const activeId = user ? user.id : db.getOrCreateGuestId();
+      setCurrentUserId(activeId);
+      // Fetch fresh count from simulated DB to prevent client-side credit reset
+      setAnalysisCount(db.getAnalysisCount(activeId));
+  }, [user]);
+
+  // OAuth Lifecycle
   useEffect(() => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
@@ -46,8 +53,6 @@ const App: React.FC = () => {
           authService.handleOAuthCallback(code, state).then(res => {
               if (res.success && res.user) {
                   setUser(res.user);
-                  setAnalysisCount(res.user.analysisCount);
-                  setView('dashboard');
               }
           });
       }
@@ -66,12 +71,13 @@ const App: React.FC = () => {
   const handleLogout = () => {
       authService.logoutUser();
       setUser(null);
-      setAnalysisCount(db.getAnalysisCount(db.getOrCreateGuestId()));
       setView('home');
   };
 
   const handleAnalysis = async (text: string) => {
-    if (!user?.isPremium && analysisCount >= MAX_FREE_ANALYSIS) {
+    // PRE-FLIGHT: Force a fresh database check for credits
+    const freshCount = db.getAnalysisCount(currentUserId);
+    if (!user?.isPremium && freshCount >= MAX_FREE_ANALYSIS) {
       setAuthMode('upgrade');
       setIsAuthModalOpen(true);
       return;
@@ -79,19 +85,32 @@ const App: React.FC = () => {
 
     setIsAnalyzing(true);
     try {
-      // Step 1: Rapid Extraction
+      // PHASE 1: Structured Extraction (Target: 2-4s)
       const extractedRaw = await extractCitationsFromText(text);
       if (extractedRaw.length === 0) {
-          alert("No citations identified in the text.");
+          alert("No formal citations identified in the input.");
           setIsAnalyzing(false);
           return;
       }
 
-      // Step 2: Parallel Verification (Massive performance gain)
-      // Processes all citations concurrently while handling internal throttling
-      const verifiedCitations = await Promise.all(
-          extractedRaw.map(item => verifyCitationParallel(item))
-      );
+      // PHASE 2: Parallel Batching (Target: 10-15s total)
+      // Optimized batching strategy: Higher concurrency for initial metadata checks,
+      // lower concurrency for expensive grounding fallbacks.
+      const verifiedCitations = [];
+      const batchSize = 2; // Conservative for rate limit safety, yet fast due to conditional skipping in Service
+      
+      for (let i = 0; i < extractedRaw.length; i += batchSize) {
+          const batch = extractedRaw.slice(i, i + batchSize);
+          const batchResults = await Promise.all(
+              batch.map(item => verifyCitationParallel(item))
+          );
+          verifiedCitations.push(...batchResults);
+          
+          // Throttling delay only if more batches remain
+          if (i + batchSize < extractedRaw.length) {
+              await new Promise(r => setTimeout(r, 800));
+          }
+      }
 
       const verifiedCount = verifiedCitations.filter(c => c.status === VerificationStatus.VERIFIED).length;
       const hallucinatedCount = verifiedCitations.filter(c => c.status === VerificationStatus.HALLUCINATED).length;
@@ -107,17 +126,17 @@ const App: React.FC = () => {
         citations: verifiedCitations
       };
 
-      // Persistence
+      // PERSISTENCE: Atomic update in Simulated DB
       db.recordAnalysis(newReport, currentUserId);
-      setAnalysisCount(prev => prev + 1);
+      setAnalysisCount(db.getAnalysisCount(currentUserId));
 
       setCurrentReport(newReport);
       setHistory(prev => [newReport, ...prev]);
       setView('report');
 
     } catch (error: any) {
-       console.error("Analysis Error:", error);
-       alert(`Service Error: ${error.message || 'The AI model is currently overloaded. Please try again in a few seconds.'}`);
+       console.error("[App] Analysis Failed:", error);
+       alert(`Technical Error: ${error.message || 'Verification system is temporarily at capacity. Please try again in 10 seconds.'}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -155,7 +174,6 @@ const App: React.FC = () => {
           {renderContent()}
       </main>
 
-      {/* Global Professional Footer - Corrected Layout */}
       <footer className="border-t border-gray-100 bg-gray-50 py-12 mt-auto">
           <div className="container mx-auto px-4 text-center">
               <div className="text-slate-500 text-sm mb-4">

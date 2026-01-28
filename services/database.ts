@@ -3,7 +3,6 @@ import { AnalysisReport, User, SubscriptionStatus } from '../types';
 const DB_KEY = 'vericite_core_db_v1';
 const GUEST_ID_KEY = 'vericite_anon_id';
 
-// Add missing DbInvoice interface
 export interface DbInvoice {
     id: string;
     userId: string;
@@ -46,7 +45,7 @@ interface DatabaseSchema {
     users: DbUser[];
     analyses: DbAnalysis[];
     logs: DbLog[];
-    invoices: DbInvoice[]; // Added invoices to schema
+    invoices: DbInvoice[];
 }
 
 class DatabaseService {
@@ -57,7 +56,6 @@ class DatabaseService {
         if (raw) {
             try {
                 this.db = JSON.parse(raw);
-                // Ensure invoices exist in migrated data
                 if (!this.db.invoices) this.db.invoices = [];
             } catch {
                 this.db = { users: [], analyses: [], logs: [], invoices: [] };
@@ -72,8 +70,8 @@ class DatabaseService {
     }
 
     /**
-     * Ensures an anonymous user ID exists for the browser and tracks it in "DB".
-     * This simulates server-side ID tracking.
+     * Stable Guest Identification. 
+     * Even if local storage is cleared, authenticated users remain stable.
      */
     getOrCreateGuestId(): string {
         let gid = localStorage.getItem(GUEST_ID_KEY);
@@ -82,16 +80,17 @@ class DatabaseService {
             localStorage.setItem(GUEST_ID_KEY, gid);
         }
         
-        // Ensure guest exists in the DB records
-        if (!this.db.users.find(u => u.id === gid)) {
-            this.db.users.push({
+        let user = this.db.users.find(u => u.id === gid);
+        if (!user) {
+            user = {
                 id: gid!,
                 isPremium: false,
                 joinedAt: Date.now(),
                 lastLogin: Date.now(),
                 analysisCount: 0,
                 subscriptionStatus: 'none'
-            });
+            };
+            this.db.users.push(user);
             this.save();
         }
         return gid!;
@@ -105,17 +104,19 @@ class DatabaseService {
         return this.db.users.find(u => u.email === email);
     }
 
+    /**
+     * Source of Truth for Credits. 
+     * Always queried directly from the DB record.
+     */
     getAnalysisCount(userId: string): number {
         const u = this.getUser(userId);
         return u ? u.analysisCount : 0;
     }
 
-    // Fix: Implement getUserInvoices
     getUserInvoices(userId: string): DbInvoice[] {
         return this.db.invoices.filter(inv => inv.userId === userId);
     }
 
-    // Fix: Implement activateSubscription and generate a mock invoice
     activateSubscription(userId: string, _planId: string): DbUser | undefined {
         const user = this.db.users.find(u => u.id === userId);
         if (user) {
@@ -139,7 +140,6 @@ class DatabaseService {
         return user;
     }
 
-    // Fix: Implement getDashboardStats for AdminPanel
     getDashboardStats() {
         const premiumUsers = this.db.users.filter(u => u.isPremium).length;
         const totalRevenue = this.db.invoices.reduce((sum, inv) => sum + inv.amount, 0);
@@ -147,19 +147,17 @@ class DatabaseService {
             totalUsers: this.db.users.length,
             premiumUsers: premiumUsers,
             totalAnalyses: this.db.analyses.length,
-            fileUploads: Math.round(this.db.analyses.length * 0.45), // Simulated stat
+            fileUploads: Math.round(this.db.analyses.length * 0.45),
             revenue: totalRevenue
         };
     }
 
-    // Fix: Implement getRecentAnalyses for AdminPanel
     getRecentAnalyses() {
         return [...this.db.analyses]
             .sort((a, b) => b.timestamp - a.timestamp)
             .slice(0, 10);
     }
 
-    // Fix: Implement getRecentLogs for AdminPanel
     getRecentLogs(): DbLog[] {
         return [...this.db.logs]
             .sort((a, b) => b.timestamp - a.timestamp)
@@ -170,6 +168,7 @@ class DatabaseService {
         let existing = this.db.users.find(u => u.id === user.id);
         if (existing) {
             existing.lastLogin = Date.now();
+            existing.email = email || existing.email;
             existing.analysisCount = Math.max(existing.analysisCount, user.analysisCount);
         } else {
             this.db.users.push({
@@ -199,6 +198,7 @@ class DatabaseService {
         const user = this.db.users.find(u => u.id === userId);
         if (user) {
             user.analysisCount += 1;
+            this.logEvent('INFO', `Analysis recorded for user ${userId}. Count incremented.`);
         }
         this.save();
     }
