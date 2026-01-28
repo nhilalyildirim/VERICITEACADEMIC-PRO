@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Lock, Users, Activity, UploadCloud, DollarSign, LogOut, AlertTriangle, Server, RefreshCw } from 'lucide-react';
 import { authService } from '../services/authService';
@@ -143,20 +144,28 @@ const AdminLogin: React.FC<{ onLoginSuccess: () => void }> = ({ onLoginSuccess }
 
 const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     // STATE: Real Data
-    const [stats, setStats] = useState(db.getDashboardStats());
-    const [recentAnalyses, setRecentAnalyses] = useState(db.getRecentAnalyses());
-    const [logs, setLogs] = useState(db.getRecentLogs());
+    // Fix: Initialize with empty values as database calls are asynchronous
+    const [stats, setStats] = useState({ totalUsers: 0, premiumUsers: 0, totalAnalyses: 0, fileUploads: 0, revenue: 0 });
+    const [recentAnalyses, setRecentAnalyses] = useState<any[]>([]);
+    const [logs, setLogs] = useState<any[]>([]);
     const [lastRefresh, setLastRefresh] = useState(new Date());
 
-    const refreshData = () => {
-        setStats(db.getDashboardStats());
-        setRecentAnalyses(db.getRecentAnalyses());
-        setLogs(db.getRecentLogs());
+    const refreshData = async () => {
+        // Fix: Properly await async database methods to avoid setting promises to state
+        const [s, a, l] = await Promise.all([
+            db.getDashboardStats(),
+            db.getRecentAnalyses(),
+            db.getRecentLogs()
+        ]);
+        setStats(s);
+        setRecentAnalyses(a);
+        setLogs(l);
         setLastRefresh(new Date());
     };
 
     // Auto-refresh every 30s
     useEffect(() => {
+        refreshData();
         const interval = setInterval(refreshData, 30000);
         return () => clearInterval(interval);
     }, []);
@@ -300,7 +309,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                                  {recentAnalyses.length === 0 && (
                                      <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-500">No analyses performed yet.</td></tr>
                                  )}
-                                 {recentAnalyses.map(analysis => (
+                                 {recentAnalyses.map((analysis: any) => (
                                      <tr key={analysis.id} className="hover:bg-gray-50 transition-colors">
                                          <td className="px-6 py-3 font-mono text-gray-600 text-xs">{analysis.id}</td>
                                          <td className="px-6 py-3 text-gray-900 font-medium">{analysis.userId}</td>

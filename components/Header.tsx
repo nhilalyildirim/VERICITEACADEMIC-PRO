@@ -1,7 +1,7 @@
+
 import React from 'react';
 import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, HelpCircle, CreditCard, Gem } from 'lucide-react';
 import { User as UserType } from '../types';
-import { MAX_FREE_ANALYSIS } from '../constants';
 
 interface HeaderProps {
     user: UserType | null;
@@ -13,8 +13,8 @@ interface HeaderProps {
     analysisCount: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, analysisCount }) => {
-  const remainingFree = Math.max(0, MAX_FREE_ANALYSIS - analysisCount);
+export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate }) => {
+  const credits = user?.credits ?? 5;
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
@@ -52,21 +52,14 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
              >
                 <Gem className="w-4 h-4" /> Pricing
              </button>
-             <button 
-                onClick={() => onNavigate('support')} 
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'support' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-             >
-                <HelpCircle className="w-4 h-4" /> Support
-             </button>
           </nav>
 
           <div className="flex items-center gap-4">
-             {/* Free Trial Counter Visibility */}
-             {!user?.isPremium && (
+             {/* Persistent Credit Counter */}
+             {user && !user.isPremium && (
                  <div className="hidden md:flex items-center px-3 py-1 rounded bg-slate-800 border border-slate-700">
-                     <span className="text-xs text-slate-300">
-                         <span className="font-bold text-white">{remainingFree}</span> / {MAX_FREE_ANALYSIS} free scans left
-                     </span>
+                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mr-2">Remaining</span>
+                     <span className="text-sm font-bold text-white">{credits} Scans</span>
                  </div>
              )}
 
@@ -74,18 +67,18 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
                  <div className="flex items-center gap-3 pl-4 border-l border-slate-700">
                      <div 
                         className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity mr-2"
-                        title="Current Plan"
+                        title="Plan Status"
                      >
-                        <div className="text-xs text-slate-400">Plan</div>
+                        <div className="text-[10px] font-bold text-slate-500 uppercase">Tier</div>
                         <div className="text-xs font-bold text-white flex items-center gap-1">
-                            {user.isPremium ? <span className="text-amber-400 flex items-center gap-1"><Zap className="w-3 h-3 fill-current" /> Premium</span> : 'Free Tier'}
+                            {user.isPremium ? <span className="text-amber-400 flex items-center gap-1"><Zap className="w-3 h-3 fill-current" /> Pro</span> : 'Free'}
                         </div>
                      </div>
                      
                      <button 
                         onClick={() => onNavigate('billing')}
                         className={`p-2 rounded-full transition-colors ${currentView === 'billing' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                        title="Billing & Payments"
+                        title="Billing"
                      >
                          <CreditCard className="w-5 h-5" />
                      </button>
@@ -102,13 +95,13 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
                 <div className="flex items-center gap-3 text-sm">
                     <button 
                         onClick={onLogin}
-                        className="text-slate-300 hover:text-white font-medium transition-colors"
+                        className="text-slate-300 hover:text-white font-bold transition-colors"
                     >
                         Log In
                     </button>
                     <button 
                         onClick={onRegister}
-                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium shadow-lg shadow-blue-900/20 transition-all transform hover:scale-105"
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg font-bold shadow-lg shadow-blue-900/20 transition-all active:scale-95"
                     >
                         Get Started
                     </button>

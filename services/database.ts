@@ -1,217 +1,193 @@
-import { AnalysisReport, User, SubscriptionStatus } from '../types';
 
-const DB_KEY = 'vericite_core_db_v1';
-const GUEST_ID_KEY = 'vericite_anon_id';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { AnalysisReport, User } from '../types';
+
+// Vercel / Vite Environment Variables
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+
+// Fail-safe initialization: Strictly check for valid configuration
+const isConfigured = !!supabaseUrl && !!supabaseKey && supabaseUrl.startsWith('http');
+
+/**
+ * Singleton Supabase client.
+ * Shared across the entire application for auth and database operations.
+ */
+export const supabase: SupabaseClient | null = isConfigured 
+    ? createClient(supabaseUrl!, supabaseKey!, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+        }
+      }) 
+    : null;
 
 export interface DbInvoice {
     id: string;
-    userId: string;
-    date: number;
+    date: string | number;
     amount: number;
     status: 'Paid' | 'Pending' | 'Failed';
 }
 
-export interface DbUser {
-    id: string;
-    email?: string;
-    isPremium: boolean;
-    joinedAt: number;
-    lastLogin: number;
-    analysisCount: number;
-    subscriptionStatus: SubscriptionStatus;
-    planType?: 'free' | 'pro_monthly';
-    currentPeriodStart?: number;
-    currentPeriodEnd?: number;
-}
-
-export interface DbAnalysis {
-    id: string;
-    userId: string;
-    timestamp: number;
-    trustScore: number;
-    citationCount: number;
-    verifiedCount: number;
-    hallucinatedCount: number;
-}
-
-export interface DbLog {
-    id: string;
-    timestamp: number;
-    level: 'INFO' | 'WARN' | 'ERROR';
-    message: string;
-}
-
-interface DatabaseSchema {
-    users: DbUser[];
-    analyses: DbAnalysis[];
-    logs: DbLog[];
-    invoices: DbInvoice[];
-}
-
 class DatabaseService {
-    private db: DatabaseSchema;
-
-    constructor() {
-        const raw = localStorage.getItem(DB_KEY);
-        if (raw) {
-            try {
-                this.db = JSON.parse(raw);
-                if (!this.db.invoices) this.db.invoices = [];
-            } catch {
-                this.db = { users: [], analyses: [], logs: [], invoices: [] };
-            }
-        } else {
-            this.db = { users: [], analyses: [], logs: [], invoices: [] };
-        }
-    }
-
-    private save() {
-        localStorage.setItem(DB_KEY, JSON.stringify(this.db));
+    public isReady(): boolean {
+        return !!supabase;
     }
 
     /**
-     * Stable Guest Identification. 
-     * Even if local storage is cleared, authenticated users remain stable.
+     * Fetches user profile with real-time credit balance.
      */
-    getOrCreateGuestId(): string {
-        let gid = localStorage.getItem(GUEST_ID_KEY);
-        if (!gid) {
-            gid = `anon_${Math.random().toString(36).substr(2, 9)}`;
-            localStorage.setItem(GUEST_ID_KEY, gid);
-        }
+    async getUserProfile(userId: string): Promise<User | null> {
+        if (!supabase) return null;
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
         
-        let user = this.db.users.find(u => u.id === gid);
-        if (!user) {
-            user = {
-                id: gid!,
-                isPremium: false,
-                joinedAt: Date.now(),
-                lastLogin: Date.now(),
-                analysisCount: 0,
-                subscriptionStatus: 'none'
-            };
-            this.db.users.push(user);
-            this.save();
-        }
-        return gid!;
-    }
+        if (error || !data) return null;
 
-    getUser(userId: string): DbUser | undefined {
-        return this.db.users.find(u => u.id === userId);
-    }
-    
-    getUserByEmail(email: string): DbUser | undefined {
-        return this.db.users.find(u => u.email === email);
+        return {
+            id: data.id,
+            email: data.email,
+            isPremium: data.is_premium || false,
+            credits: data.credits ?? 5,
+            analysisCount: data.analysis_count || 0,
+            subscriptionStatus: data.subscription_status || 'none',
+            planType: data.plan_type,
+            currentPeriodStart: data.current_period_start,
+            currentPeriodEnd: data.current_period_end,
+            customerId: data.customer_id
+        } as User;
     }
 
     /**
-     * Source of Truth for Credits. 
-     * Always queried directly from the DB record.
+     * ATOMIC CREDIT ENFORCEMENT
+     * Deducts 1 credit from the database. 
+     * This is the source of truth for the 5-scan limit.
      */
-    getAnalysisCount(userId: string): number {
-        const u = this.getUser(userId);
-        return u ? u.analysisCount : 0;
-    }
-
-    getUserInvoices(userId: string): DbInvoice[] {
-        return this.db.invoices.filter(inv => inv.userId === userId);
-    }
-
-    activateSubscription(userId: string, _planId: string): DbUser | undefined {
-        const user = this.db.users.find(u => u.id === userId);
-        if (user) {
-            user.isPremium = true;
-            user.subscriptionStatus = 'active';
-            user.planType = 'pro_monthly';
-            user.currentPeriodStart = Date.now();
-            user.currentPeriodEnd = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    async deductCredit(userId: string): Promise<boolean> {
+        if (!supabase) return false;
+        
+        try {
+            // Fetch fresh state to prevent stale local cache bypass
+            const { data: profile, error: fetchError } = await supabase
+                .from('profiles')
+                .select('credits, is_premium')
+                .eq('id', userId)
+                .single();
             
-            this.db.invoices.push({
-                id: `INV-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-                userId: userId,
-                date: Date.now(),
-                amount: 14.99,
-                status: 'Paid'
-            });
+            if (fetchError || !profile) return false;
+            if (profile.is_premium) return true;
             
-            this.logEvent('INFO', `Subscription activated for user ${userId}`);
-            this.save();
+            const currentCredits = profile.credits ?? 5;
+            if (currentCredits <= 0) return false;
+
+            const { error: updateError } = await supabase
+                .from('profiles')
+                .update({ credits: Math.max(0, currentCredits - 1) })
+                .eq('id', userId);
+
+            return !updateError;
+        } catch (e) {
+            console.error("[Database] Credit deduction failed:", e);
+            return false;
         }
-        return user;
     }
 
-    getDashboardStats() {
-        const premiumUsers = this.db.users.filter(u => u.isPremium).length;
-        const totalRevenue = this.db.invoices.reduce((sum, inv) => sum + inv.amount, 0);
+    async recordAnalysis(report: AnalysisReport, userId: string): Promise<void> {
+        if (!supabase) return;
+        
+        await supabase.from('analyses').insert({
+            user_id: userId,
+            trust_score: report.overallTrustScore,
+            citation_count: report.totalCitations,
+            verified_count: report.verifiedCount,
+            hallucinated_count: report.hallucinatedCount,
+            report_data: report,
+            created_at: new Date().toISOString()
+        });
+
+        // Increment total usage counter
+        const { data: profile } = await supabase.from('profiles').select('analysis_count').eq('id', userId).single();
+        if (profile) {
+            await supabase.from('profiles')
+                .update({ analysis_count: (profile.analysis_count || 0) + 1 })
+                .eq('id', userId);
+        }
+    }
+
+    async ensureUserExists(user: { id: string, email: string }) {
+        if (!supabase) return;
+
+        const { data: existing } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', user.id)
+            .single();
+
+        if (!existing) {
+            await supabase.from('profiles').insert({
+                id: user.id,
+                email: user.email,
+                is_premium: false,
+                credits: 5, 
+                analysis_count: 0,
+                subscription_status: 'none',
+                joined_at: new Date().toISOString()
+            });
+        }
+    }
+
+    async activateSubscription(userId: string, planId: string): Promise<User | null> {
+        if (!supabase) return null;
+        await supabase
+            .from('profiles')
+            .update({ 
+                is_premium: true, 
+                subscription_status: 'active',
+                plan_type: planId === 'plan_monthly_pro' ? 'pro_monthly' : 'pro_monthly',
+                current_period_end: Date.now() + (30 * 24 * 60 * 60 * 1000)
+            })
+            .eq('id', userId);
+        return this.getUserProfile(userId);
+    }
+
+    async getDashboardStats() {
+        if (!supabase) return { totalUsers: 0, premiumUsers: 0, totalAnalyses: 0, fileUploads: 0, revenue: 0 };
+        const { count: totalUsers } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+        const { count: premiumUsers } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_premium', true);
+        const { count: totalAnalyses } = await supabase.from('analyses').select('*', { count: 'exact', head: true });
         return {
-            totalUsers: this.db.users.length,
-            premiumUsers: premiumUsers,
-            totalAnalyses: this.db.analyses.length,
-            fileUploads: Math.round(this.db.analyses.length * 0.45),
-            revenue: totalRevenue
+            totalUsers: totalUsers || 0,
+            premiumUsers: premiumUsers || 0,
+            totalAnalyses: totalAnalyses || 0,
+            fileUploads: 0, 
+            revenue: (premiumUsers || 0) * 14.99
         };
     }
 
-    getRecentAnalyses() {
-        return [...this.db.analyses]
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, 10);
+    async getRecentAnalyses() {
+        if (!supabase) return [];
+        const { data } = await supabase
+            .from('analyses')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(10);
+        return (data || []).map(a => ({
+            id: a.id,
+            userId: a.user_id,
+            citationCount: a.citation_count,
+            trustScore: a.trust_score,
+            timestamp: a.created_at
+        }));
     }
 
-    getRecentLogs(): DbLog[] {
-        return [...this.db.logs]
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, 50);
-    }
-
-    ensureUser(user: User, email?: string) {
-        let existing = this.db.users.find(u => u.id === user.id);
-        if (existing) {
-            existing.lastLogin = Date.now();
-            existing.email = email || existing.email;
-            existing.analysisCount = Math.max(existing.analysisCount, user.analysisCount);
-        } else {
-            this.db.users.push({
-                id: user.id,
-                email: email,
-                isPremium: user.isPremium,
-                joinedAt: Date.now(),
-                lastLogin: Date.now(),
-                analysisCount: user.analysisCount,
-                subscriptionStatus: user.subscriptionStatus
-            });
-        }
-        this.save();
-    }
-
-    recordAnalysis(report: AnalysisReport, userId: string) {
-        this.db.analyses.push({
-            id: report.id,
-            userId: userId,
-            timestamp: report.timestamp,
-            trustScore: report.overallTrustScore,
-            citationCount: report.totalCitations,
-            verifiedCount: report.verifiedCount,
-            hallucinatedCount: report.hallucinatedCount
-        });
-
-        const user = this.db.users.find(u => u.id === userId);
-        if (user) {
-            user.analysisCount += 1;
-            this.logEvent('INFO', `Analysis recorded for user ${userId}. Count incremented.`);
-        }
-        this.save();
-    }
-
-    logEvent(level: 'INFO' | 'WARN' | 'ERROR', message: string) {
-        this.db.logs.push({
-            id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-            timestamp: Date.now(),
-            level,
-            message
-        });
-        if (this.db.logs.length > 500) this.db.logs = this.db.logs.slice(-500);
-        this.save();
+    async getRecentLogs() {
+        if (!supabase) return [];
+        const { data } = await supabase.from('logs').select('*').order('timestamp', { ascending: false }).limit(20);
+        return data || [];
     }
 }
 

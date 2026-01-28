@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -5,25 +6,16 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Enhanced retry logic with exponential backoff and jitter.
- * Crucial for avoiding cascading 429 failures.
+ * Optimized retry mechanism with Jitter to fix 429 errors during high concurrency.
  */
-async function withRetry<T>(operation: () => Promise<T>, retries = 5, baseDelay = 1000): Promise<T> {
+async function withRetry<T>(operation: () => Promise<T>, retries = 3, baseDelay = 500): Promise<T> {
   try {
     return await operation();
   } catch (error: any) {
-    const status = error?.status;
-    const message = error?.message || "";
+    const isRetryable = error?.status === 429 || error?.message?.includes("429") || error?.message?.includes("quota");
     
-    const isRateLimit = status === 429 || message.includes("429") || message.includes("quota");
-    const isOverload = status === 503 || message.includes("503") || message.includes("overloaded");
-    
-    if (retries > 0 && (isRateLimit || isOverload)) {
-      // Exponential backoff with jitter
-      const jitter = Math.random() * 1000;
-      const waitTime = (isRateLimit ? baseDelay * 3 : baseDelay) + jitter;
-      
-      console.warn(`Gemini API Busy (Status: ${status}). Retrying in ${Math.round(waitTime)}ms... Attempts left: ${retries}`);
+    if (retries > 0 && isRetryable) {
+      const waitTime = baseDelay + (Math.random() * 300);
       await delay(waitTime);
       return withRetry(operation, retries - 1, baseDelay * 2);
     }
@@ -32,24 +24,21 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 5, baseDelay 
 }
 
 /**
- * Rapid extraction using Gemini 3 Flash. 
- * Flash provides significantly lower latency (1-3s vs 10s+) for structured tasks.
+ * Instant Citation Extraction (Gemini 3 Flash).
+ * Target: Under 3 seconds for 5000+ words.
  */
 export const extractCitationsFromText = async (text: string): Promise<any[]> => {
-  if (!text || text.length < 5) return [];
+  if (!text || text.trim().length < 10) return [];
 
   return withRetry(async () => {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: [
-        { 
+      contents: [{ 
           role: 'user', 
-          parts: [{ text: `Extract all formal academic citations (APA, MLA, etc.) from this text. 
-          Return a JSON array of objects with: original_text, title, author, year, doi. 
-          Ignore general mentions without a specific work. If unknown, use empty string.` }] 
-        },
-        { role: 'user', parts: [{ text: `INPUT:\n${text}` }] }
-      ],
+          parts: [{ text: `Extract academic citations from the text. 
+          Return ONLY a JSON array of objects: {original_text, title, author, year, doi}.
+          Text: ${text.slice(0, 20000)}` }] 
+      }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -65,56 +54,40 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
             },
             required: ["original_text", "title"]
           }
-        }
+        },
+        temperature: 0 // Zero temperature for max speed and reliability
       }
     });
 
-    const jsonText = response.text || "[]";
-    try {
-        return JSON.parse(jsonText);
-    } catch (e) {
-        return [];
-    }
-  });
+    return JSON.parse(response.text || "[]");
+  }, 2, 600);
 };
 
 /**
- * Grounded verification using Google Search.
+ * Fast Grounding Check.
  */
-export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified: boolean, title?: string, url?: string, snippet?: string }> => {
+export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified: boolean, title?: string, url?: string }> => {
   return withRetry(async () => {
-    const query = `Verify academic source existence: "${citation.title}" by ${citation.author} (${citation.year})`;
-
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview", // Flash also supports grounding and is much faster
-      contents: [{ role: 'user', parts: [{ text: query }] }],
+      model: "gemini-3-flash-preview",
+      contents: [{ role: 'user', parts: [{ text: `Is this real: "${citation.title}" ${citation.author || ""} ${citation.year || ""}` }] }],
       config: {
-        tools: [{ googleSearch: {} }]
+        tools: [{ googleSearch: {} }],
+        temperature: 0
       }
     });
 
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    if (chunks && chunks.length > 0) {
-        const webChunk = chunks.find((c: any) => c.web?.uri);
-        if (webChunk?.web) {
-            return {
-                verified: true,
-                title: webChunk.web.title,
-                url: webChunk.web.uri,
-                snippet: "Validated against live web index."
-            };
-        }
-    }
-    return { verified: false };
-  });
+    const chunk = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.find((c: any) => c.web?.uri);
+    return chunk ? { verified: true, title: chunk.web.title, url: chunk.web.uri } : { verified: false };
+  }, 1, 400);
 };
 
 export const reformatCitation = async (canonicalData: any, style: string): Promise<string> => {
   return withRetry(async () => {
     const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: [{ role: 'user', parts: [{ text: `Reformat to ${style} style using this metadata: ${JSON.stringify(canonicalData)}. Return only the formatted text.` }] }],
+        contents: [{ role: 'user', parts: [{ text: `Format as ${style}: ${JSON.stringify(canonicalData)}` }] }],
     });
-    return response.text?.trim() || "Formatting error.";
-  }, 2, 500);
+    return response.text?.trim() || "Error.";
+  }, 1, 200);
 };

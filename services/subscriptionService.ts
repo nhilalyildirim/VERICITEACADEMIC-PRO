@@ -1,3 +1,4 @@
+
 import { db } from './database';
 
 /**
@@ -23,7 +24,8 @@ export const PAYMENT_CONFIG = {
  */
 export const initiateCheckout = async (userId: string, planId: string): Promise<{ success: boolean, checkoutUrl?: string, message?: string }> => {
     // 1. Backend Check: Is user already active?
-    const user = db.getUser(userId);
+    // Fix: Changed getUser to getUserProfile as it is the correct method name in DatabaseService
+    const user = await db.getUserProfile(userId);
     if (!user) {
         return { success: false, message: "User session invalid." };
     }
@@ -60,7 +62,8 @@ export const simulatePaymentWebhook = async (userId: string, planId: string): Pr
     console.log(`[Webhook] Server received 'payment_succeeded' event for ${userId}`);
     
     // Delegate to database service to perform atomic update (Source of Truth)
-    const updatedUser = db.activateSubscription(userId, planId);
+    // Fix: Correctly call and await activateSubscription which has been added to DatabaseService
+    const updatedUser = await db.activateSubscription(userId, planId);
     
     return !!updatedUser;
 };

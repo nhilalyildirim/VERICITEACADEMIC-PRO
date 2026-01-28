@@ -45,14 +45,14 @@ export interface AnalysisReport {
 
 export interface User {
   id: string;
+  email?: string;
   isPremium: boolean;
   analysisCount: number;
-  // Paddle-ready Subscription Fields
-  subscriptionId?: string;
-  customerId?: string;
+  credits: number; // Current remaining credits
   subscriptionStatus: SubscriptionStatus;
   planType?: 'free' | 'pro_monthly';
   currentPeriodStart?: number;
   currentPeriodEnd?: number;
-  cancelAtPeriodEnd?: boolean;
+  // Added customerId to support billing view
+  customerId?: string;
 }
