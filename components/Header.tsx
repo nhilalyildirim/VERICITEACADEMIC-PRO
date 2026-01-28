@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, CreditCard, Gem } from 'lucide-react';
+import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, CreditCard, Gem, BarChart3 } from 'lucide-react';
 import { User as UserType } from '../types';
 import { storageService } from '../services/storageService';
 
@@ -66,6 +66,14 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
 
              {user ? (
                  <div className="flex items-center gap-3 pl-4 border-l border-slate-700">
+                     {/* Use analysisCount here to fix TS error and provide user value */}
+                     <div className="hidden lg:flex flex-col items-end mr-3">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                           <BarChart3 className="w-2.5 h-2.5" /> Total Scans
+                        </div>
+                        <div className="text-xs font-bold text-white">{analysisCount}</div>
+                     </div>
+
                      <div 
                         className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity mr-2"
                         title="Plan Status"
