@@ -46,7 +46,15 @@ export const authService = {
     },
 
     loginAdmin: async (username: string, pass: string): Promise<boolean> => {
-        if (username === 'admin' && pass === 'vericite2026') {
+        const ADMIN_USER = process.env.ADMIN_USERNAME || 'admin';
+        const ADMIN_PASS = process.env.ADMIN_PASSWORD || '';
+
+        if (!ADMIN_PASS) {
+            console.warn('[VeriCite] ADMIN_PASSWORD env variable not set.');
+            return false;
+        }
+
+        if (username === ADMIN_USER && pass === ADMIN_PASS) {
             localStorage.setItem("vericite_admin_token", "admin_" + Date.now());
             return true;
         }

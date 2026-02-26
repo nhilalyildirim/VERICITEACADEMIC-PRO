@@ -31,7 +31,7 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
 
   return withRetry(async () => {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: [{ 
           role: 'user', 
           parts: [{ text: `Extract academic citations from the text. 
@@ -68,7 +68,7 @@ export const extractCitationsFromText = async (text: string): Promise<any[]> => 
 export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified: boolean, title?: string, url?: string }> => {
   return withRetry(async () => {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: [{ role: 'user', parts: [{ text: `Is this real: "${citation.title}" ${citation.author || ""} ${citation.year || ""}` }] }],
       config: {
         tools: [{ googleSearch: {} }],
@@ -91,7 +91,7 @@ export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified:
 export const reformatCitation = async (canonicalData: any, style: string): Promise<string> => {
   return withRetry(async () => {
     const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: [{ role: 'user', parts: [{ text: `Format as ${style}: ${JSON.stringify(canonicalData)}` }] }],
     });
     return response.text?.trim() || "Error.";

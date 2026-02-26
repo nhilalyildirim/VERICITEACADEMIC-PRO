@@ -22,17 +22,41 @@ export const verifyCitationParallel = async (extracted: any): Promise<Citation> 
       }
 
       const results = await Promise.all(searchPromises);
-      const crMatch = results.find(r => r?.message)?.message || results.find(r => r?.message?.items?.[0])?.message?.items?.[0];
+      let crMatch = null;
+
+      // DOI lookup returns message object directly
+      const doiResult = results[0];
+      if (doiResult?.message?.title) {
+          crMatch = doiResult.message;
+      }
+
+      // Bibliographic search returns message.items array
+      if (!crMatch) {
+          const searchResult = results.find(r => r?.message?.items?.length > 0);
+          if (searchResult) crMatch = searchResult.message.items[0];
+      }
 
       if (crMatch) {
           const matchTitle = crMatch.title?.[0] || "";
-          if (normalize(matchTitle).includes(normalize(title).slice(0, 15))) {
-              return createCitation(extracted, VerificationStatus.VERIFIED, 98, {
+          const titleWords = normalize(title).split(/\s+/).filter(w => w.length > 3);
+          const matchWords = normalize(matchTitle).split(/\s+/);
+          const overlap = titleWords.filter(w => matchWords.includes(w)).length;
+          const similarity = titleWords.length > 0 ? overlap / titleWords.length : 0;
+
+          if (similarity >= 0.6) {  // 60% word overlap required
+              return createCitation(extracted, VerificationStatus.VERIFIED, Math.round(similarity * 100), {
                   source: 'Crossref',
                   doi: crMatch.DOI,
                   title: matchTitle,
                   url: crMatch.URL || `https://doi.org/${crMatch.DOI}`
               }, "Verified via Crossref academic index.");
+          } else if (similarity >= 0.4) {
+              return createCitation(extracted, VerificationStatus.AMBIGUOUS, 50, {
+                  source: 'Crossref',
+                  doi: crMatch.DOI,
+                  title: matchTitle,
+                  url: crMatch.URL || `https://doi.org/${crMatch.DOI}`
+              }, "Partial match found. Manual verification recommended.");
           }
       }
 

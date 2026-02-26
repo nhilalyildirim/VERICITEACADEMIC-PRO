@@ -4,11 +4,28 @@ import { AnalysisReport, User } from '../types';
 
 // Vercel / Vite Environment Variables resolution
 // Explicitly check process.env (mapped in vite.config.ts) and import.meta.env (Vite standard)
-const supabaseUrl = process.env.SUPABASE_URL || (import.meta as any).env?.VITE_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_ANON_KEY || (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = 
+  process.env.VITE_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  (import.meta as any).env?.VITE_SUPABASE_URL ||
+  (import.meta as any).env?.SUPABASE_URL ||
+  '';
+
+const supabaseKey = 
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
+  (import.meta as any).env?.SUPABASE_ANON_KEY ||
+  '';
 
 // Fail-safe initialization: Strictly check for valid configuration
 const isConfigured = !!supabaseUrl && !!supabaseKey && supabaseUrl.startsWith('http');
+
+if (!isConfigured) {
+  console.warn('[VeriCite] Supabase not configured. URL:', !!supabaseUrl, 'KEY:', !!supabaseKey);
+}
 
 /**
  * Singleton Supabase client.
@@ -75,6 +92,7 @@ class DatabaseService {
         if (!supabase) return false;
         
         try {
+            // First check if premium (premium users bypass credit check)
             const { data: profile, error: fetchError } = await supabase
                 .from('profiles')
                 .select('credits, is_premium')
@@ -83,16 +101,18 @@ class DatabaseService {
             
             if (fetchError || !profile) return false;
             if (profile.is_premium) return true;
-            
-            const currentCredits = profile.credits ?? 5;
-            if (currentCredits <= 0) return false;
+            if ((profile.credits ?? 0) <= 0) return false;
 
-            const { error: updateError } = await supabase
+            // Atomic update: only succeeds if credits > 0 at time of update
+            const { error: updateError, count } = await supabase
                 .from('profiles')
-                .update({ credits: Math.max(0, currentCredits - 1) })
-                .eq('id', userId);
+                .update({ credits: profile.credits - 1 })
+                .eq('id', userId)
+                .gt('credits', 0)  // Guard: atomic check
+                .select();
 
-            return !updateError;
+            if (updateError || !count) return false;
+            return true;
         } catch (e) {
             console.error("[Database] Credit deduction failed:", e);
             return false;
