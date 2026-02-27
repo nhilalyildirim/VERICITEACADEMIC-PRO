@@ -4,7 +4,7 @@ export const APP_NAME = "VeriCite Academic";
 export const API_VERSION = "v1.0.2-stable";
 
 export const PRICING = {
-  MONTHLY: 14.99,
+  MONTHLY: 9.99,
   CURRENCY: "$"
 };
 

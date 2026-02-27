@@ -12,6 +12,8 @@ import { BillingPage } from './components/BillingPage';
 import { PrivacyPolicy } from './components/legal/PrivacyPolicy';
 import { TermsOfService } from './components/legal/TermsOfService';
 import { AcademicIntegrity } from './components/legal/AcademicIntegrity';
+import { AdminDashboard } from './components/AdminDashboard';
+import { AdminLoginPage } from './components/AdminLoginPage';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationParallel } from './services/academicService';
 import { authService } from './services/authService';
@@ -25,11 +27,17 @@ const App: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'upgrade'>('login');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [view, setView] = useState<'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billing' | 'privacy' | 'terms' | 'integrity'>('home');
+  const [view, setView] = useState<'home' | 'dashboard' | 'report' | 'support' | 'pricing' | 'billing' | 'privacy' | 'terms' | 'integrity' | 'admin'>('home');
   const [currentReport, setCurrentReport] = useState<AnalysisReport | null>(null);
   const [history, setHistory] = useState<AnalysisReport[]>([]);
   
   const isCloudConnected = db.isReady();
+
+  useEffect(() => {
+    if (window.location.pathname === '/admin') {
+      setView('admin');
+    }
+  }, []);
 
   useEffect(() => {
     if (isCloudConnected) {
@@ -177,6 +185,13 @@ const App: React.FC = () => {
         {view === 'privacy' && <PrivacyPolicy onBack={() => setView('home')} />}
         {view === 'terms' && <TermsOfService onBack={() => setView('home')} />}
         {view === 'integrity' && <AcademicIntegrity onBack={() => setView('home')} />}
+
+        {view === 'admin' && !authService.isAdminAuthenticated() && (
+          <AdminLoginPage onLoginSuccess={() => setView('admin')} onBack={() => { window.history.pushState({}, '', '/'); setView('home'); }} />
+        )}
+        {view === 'admin' && authService.isAdminAuthenticated() && (
+          <AdminDashboard onBack={() => { window.history.pushState({}, '', '/'); setView('home'); }} />
+        )}
       </main>
 
       <Footer onNavigate={setView} />

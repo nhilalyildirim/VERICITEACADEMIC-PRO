@@ -65,6 +65,37 @@ export const authService = {
         localStorage.removeItem("vericite_admin_token");
     },
 
+    signInWithEmail: async (email: string, password: string): Promise<User | null> => {
+        if (!supabase) throw new Error("Cloud service not connected.");
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        if (data.user) {
+            await db.ensureUserExists({ id: data.user.id, email: data.user.email || '' });
+            const profile = await db.getUserProfile(data.user.id);
+            if (profile) {
+                storageService.saveUserSession(profile, true);
+                return profile;
+            }
+        }
+        return null;
+    },
+
+    signUpWithEmail: async (email: string, password: string): Promise<{ needsConfirmation: boolean }> => {
+        if (!supabase) throw new Error("Cloud service not connected.");
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        if (data.user && !data.session) {
+            return { needsConfirmation: true };
+        }
+        if (data.user && data.session) {
+            await db.ensureUserExists({ id: data.user.id, email: data.user.email || '' });
+            const profile = await db.getUserProfile(data.user.id);
+            if (profile) storageService.saveUserSession(profile, true);
+            return { needsConfirmation: false };
+        }
+        return { needsConfirmation: false };
+    },
+
     logoutUser: async () => {
         if (supabase) {
             await supabase.auth.signOut();
