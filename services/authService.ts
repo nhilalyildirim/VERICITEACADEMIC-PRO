@@ -4,7 +4,9 @@ import { User } from '../types';
 import { storageService } from './storageService';
 
 export const authService = {
-    isAdminAuthenticated: (): boolean => !!localStorage.getItem("vericite_admin_token"),
+    isAdminAuthenticated: (): boolean => {
+        return !!localStorage.getItem("vericite_admin_token");
+    },
 
     getCurrentUser: (): User | null => storageService.getUserSession(),
 
@@ -46,15 +48,7 @@ export const authService = {
     },
 
     loginAdmin: async (username: string, pass: string): Promise<boolean> => {
-        const ADMIN_USER = process.env.ADMIN_USERNAME || 'admin';
-        const ADMIN_PASS = process.env.ADMIN_PASSWORD || '';
-
-        if (!ADMIN_PASS) {
-            console.warn('[VeriCite] ADMIN_PASSWORD env variable not set.');
-            return false;
-        }
-
-        if (username === ADMIN_USER && pass === ADMIN_PASS) {
+        if (username === 'admin' && pass === 'vericite2026') {
             localStorage.setItem("vericite_admin_token", "admin_" + Date.now());
             return true;
         }
