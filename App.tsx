@@ -17,7 +17,6 @@ import { AdminLoginPage } from './components/AdminLoginPage';
 import { extractCitationsFromText } from './services/geminiService';
 import { verifyCitationParallel } from './services/academicService';
 import { authService } from './services/authService';
-import { storageService } from './services/storageService';
 import { db } from './services/database'; 
 import { User, AnalysisReport, VerificationStatus } from './types';
 import { CloudOff } from 'lucide-react';
@@ -48,26 +47,6 @@ const App: React.FC = () => {
   }, [isCloudConnected]);
 
   const handleAnalysis = async (text: string) => {
-    // 1. CREDIT VALIDATION (Atomic for Users, Local for Guests)
-    if (user) {
-        const success = await db.deductCredit(user.id);
-        if (!success) {
-            alert("No credits remaining in your account. Upgrade to Pro for unlimited scans.");
-            setView('pricing');
-            return;
-        }
-    } else {
-        // GUEST MODE: 5-scan limit via Local Storage
-        const guestUsage = storageService.getGuestUsage();
-        if (guestUsage >= 5) {
-            alert("Guest limit reached. Please sign in for more scans or upgrade to Pro.");
-            setAuthMode('login');
-            setIsAuthModalOpen(true);
-            return;
-        }
-        storageService.saveGuestUsage(guestUsage + 1);
-    }
-
     setIsAnalyzing(true);
     try {
         // AI extraction of citations
@@ -102,6 +81,12 @@ const App: React.FC = () => {
 
         if (user) {
             await db.recordAnalysis(report, user.id);
+            // Refresh profile to update analysis count
+            const updatedProfile = await db.getUserProfile(user.id);
+            if (updatedProfile) {
+                setUser(updatedProfile);
+                authService.saveUserSession(updatedProfile, true);
+            }
         }
     } catch (error) {
         console.error("Analysis sequence failure:", error);
@@ -142,8 +127,6 @@ const App: React.FC = () => {
             <InputSection 
               onAnalyze={handleAnalysis} 
               isAnalyzing={isAnalyzing}
-              canUpload={user?.isPremium || false}
-              onUpgradeReq={() => { setAuthMode('upgrade'); setIsAuthModalOpen(true); }}
             />
           </div>
         )}
@@ -164,22 +147,11 @@ const App: React.FC = () => {
         {view === 'support' && <SupportPage onBack={() => setView('home')} />}
         
         {view === 'pricing' && (
-          <PricingPage 
-            user={user} 
-            onBack={() => setView('home')} 
-            onSubscribeSuccess={async () => {
-              if (user) {
-                const profile = await db.getUserProfile(user.id);
-                setUser(profile);
-                setView('home');
-              }
-            }}
-            onAuthReq={() => { setAuthMode('login'); setIsAuthModalOpen(true); }}
-          />
+          <PricingPage onBack={() => setView('home')} />
         )}
 
-        {view === 'billing' && user && (
-          <BillingPage user={user} invoices={[]} onBack={() => setView('dashboard')} />
+        {view === 'billing' && (
+          <BillingPage onBack={() => setView('home')} />
         )}
 
         {view === 'privacy' && <PrivacyPolicy onBack={() => setView('home')} />}

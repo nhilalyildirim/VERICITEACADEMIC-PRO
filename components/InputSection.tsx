@@ -15,22 +15,14 @@ if (pdfjs.GlobalWorkerOptions) {
 interface InputSectionProps {
   onAnalyze: (text: string) => void;
   isAnalyzing: boolean;
-  canUpload: boolean;
-  onUpgradeReq: () => void;
 }
 
-export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzing, canUpload, onUpgradeReq }) => {
+export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzing }) => {
   const [text, setText] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Check if the user is allowed to upload (Premium only)
-    if (!canUpload) { 
-        onUpgradeReq(); 
-        return; 
-    }
-    
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -112,15 +104,14 @@ export const InputSection: React.FC<InputSectionProps> = ({ onAnalyze, isAnalyzi
                  />
                  <label 
                     htmlFor="file-upload"
-                    className={`flex items-center gap-2.5 text-sm font-bold py-2 px-4 rounded-lg transition-all ${(!canUpload || isAnalyzing || isProcessingFile) ? 'text-gray-400 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-50 cursor-pointer'}`}
-                    onClick={(e) => { if (!canUpload) { e.preventDefault(); onUpgradeReq(); } }}
+                    className={`flex items-center gap-2.5 text-sm font-bold py-2 px-4 rounded-lg transition-all ${(isAnalyzing || isProcessingFile) ? 'text-gray-400 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-50 cursor-pointer'}`}
                  >
                     {isProcessingFile ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                         <Upload className="w-4 h-4" />
                     )}
-                    {isProcessingFile ? 'Analyzing File...' : (canUpload ? 'Upload .pdf, .docx, .txt' : 'File Upload (Pro Only)')}
+                    {isProcessingFile ? 'Analyzing File...' : 'Upload .pdf, .docx, .txt'}
                  </label>
             </div>
 

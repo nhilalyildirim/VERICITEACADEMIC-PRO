@@ -13,8 +13,6 @@ export enum CitationStyle {
   HARVARD = 'Harvard'
 }
 
-export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'trialing' | 'paused' | 'incomplete' | 'none';
-
 export interface Citation {
   id: string;
   originalText: string;
@@ -46,13 +44,5 @@ export interface AnalysisReport {
 export interface User {
   id: string;
   email?: string;
-  isPremium: boolean;
   analysisCount: number;
-  credits: number; // Current remaining credits
-  subscriptionStatus: SubscriptionStatus;
-  planType?: 'free' | 'pro_monthly';
-  currentPeriodStart?: number;
-  currentPeriodEnd?: number;
-  // Added customerId to support billing view
-  customerId?: string;
 }

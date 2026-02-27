@@ -1,29 +1,9 @@
 import { User } from '../types';
 
-const GUEST_USAGE_KEY = 'vericite_guest_usage_v1';
 const USER_KEY = 'vericite_user_session_v1';
 export const INACTIVITY_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
 
 export const storageService = {
-    /**
-     * Retrieves the persistent usage count for guest users.
-     */
-    getGuestUsage: (): number => {
-        try {
-            const val = localStorage.getItem(GUEST_USAGE_KEY);
-            return val ? parseInt(val, 10) : 0;
-        } catch { return 0; }
-    },
-
-    /**
-     * Saves the usage count for guest users.
-     */
-    saveGuestUsage: (count: number) => {
-        try {
-            localStorage.setItem(GUEST_USAGE_KEY, count.toString());
-        } catch {}
-    },
-
     /**
      * Saves the authenticated user session.
      * @param user The user object

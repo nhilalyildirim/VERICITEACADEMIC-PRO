@@ -1,8 +1,7 @@
 
 import React from 'react';
-import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Zap, CreditCard, Gem, BarChart3 } from 'lucide-react';
+import { BookOpenCheck, LogOut, LayoutDashboard, ShieldCheck, Gem, BarChart3 } from 'lucide-react';
 import { User as UserType } from '../types';
-import { storageService } from '../services/storageService';
 
 interface HeaderProps {
     user: UserType | null;
@@ -15,8 +14,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRegister, onLogout, onNavigate, analysisCount }) => {
-  const credits = user ? user.credits : (5 - storageService.getGuestUsage());
-
   return (
     <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex justify-between items-center">
@@ -51,19 +48,11 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
                 onClick={() => onNavigate('pricing')} 
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentView === 'pricing' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
              >
-                <Gem className="w-4 h-4" /> Pricing
+                <Gem className="w-4 h-4" /> Free & Open
              </button>
           </nav>
 
           <div className="flex items-center gap-4">
-             {/* Credit Counter (Guest or User) */}
-             {(!user || !user.isPremium) && (
-                 <div className="hidden md:flex items-center px-3 py-1 rounded bg-slate-800 border border-slate-700">
-                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mr-2">{user ? 'Remaining' : 'Guest'}</span>
-                     <span className={`text-sm font-bold ${credits <= 0 ? 'text-red-400' : 'text-white'}`}>{credits} Scans</span>
-                 </div>
-             )}
-
              {user ? (
                  <div className="flex items-center gap-3 pl-4 border-l border-slate-700">
                      {/* Use analysisCount here to fix TS error and provide user value */}
@@ -73,24 +62,6 @@ export const Header: React.FC<HeaderProps> = ({ user, currentView, onLogin, onRe
                         </div>
                         <div className="text-xs font-bold text-white">{analysisCount}</div>
                      </div>
-
-                     <div 
-                        className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity mr-2"
-                        title="Plan Status"
-                     >
-                        <div className="text-[10px] font-bold text-slate-500 uppercase">Tier</div>
-                        <div className="text-xs font-bold text-white flex items-center gap-1">
-                            {user.isPremium ? <span className="text-amber-400 flex items-center gap-1"><Zap className="w-3 h-3 fill-current" /> Pro</span> : 'Free'}
-                        </div>
-                     </div>
-                     
-                     <button 
-                        onClick={() => onNavigate('billing')}
-                        className={`p-2 rounded-full transition-colors ${currentView === 'billing' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
-                        title="Billing"
-                     >
-                         <CreditCard className="w-5 h-5" />
-                     </button>
                      
                      <button 
                         onClick={onLogout}

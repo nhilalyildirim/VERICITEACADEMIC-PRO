@@ -95,5 +95,9 @@ export const authService = {
             await supabase.auth.signOut();
         }
         storageService.clearSession();
+    },
+
+    saveUserSession: (user: User, rememberMe: boolean) => {
+        storageService.saveUserSession(user, rememberMe);
     }
 };
