@@ -29,63 +29,73 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 3, baseDelay 
 export const extractCitationsFromText = async (text: string): Promise<any[]> => {
   if (!text || text.trim().length < 10) return [];
 
-  return withRetry(async () => {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [{ 
-          role: 'user', 
-          parts: [{ text: `Extract academic citations from the text. 
-          Return ONLY a JSON array of objects: {original_text, title, author, year, doi}.
-          Text: ${text.slice(0, 20000)}` }] 
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              original_text: { type: Type.STRING },
-              title: { type: Type.STRING },
-              author: { type: Type.STRING },
-              year: { type: Type.STRING },
-              doi: { type: Type.STRING }
-            },
-            required: ["original_text", "title"]
-          }
-        },
-        temperature: 0 // Zero temperature for max speed and reliability
-      }
-    });
+  try {
+    return await withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ 
+            role: 'user', 
+            parts: [{ text: `Extract academic citations from the text. 
+            Return ONLY a JSON array of objects: {original_text, title, author, year, doi}.
+            Text: ${text.slice(0, 20000)}` }] 
+        }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                original_text: { type: Type.STRING },
+                title: { type: Type.STRING },
+                author: { type: Type.STRING },
+                year: { type: Type.STRING },
+                doi: { type: Type.STRING }
+              },
+              required: ["original_text", "title"]
+            }
+          },
+          temperature: 0 // Zero temperature for max speed and reliability
+        }
+      });
 
-    return JSON.parse(response.text || "[]");
-  }, 2, 600);
+      return JSON.parse(response.text || "[]");
+    }, 2, 600);
+  } catch (error: any) {
+    console.error("[Gemini] extractCitationsFromText failed:", error?.message, error?.status, error);
+    throw error;
+  }
 };
 
 /**
  * Fast Grounding Check.
  */
 export const verifyWithGoogleSearch = async (citation: any): Promise<{ verified: boolean, title?: string, url?: string }> => {
-  return withRetry(async () => {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [{ role: 'user', parts: [{ text: `Is this real: "${citation.title}" ${citation.author || ""} ${citation.year || ""}` }] }],
-      config: {
-        tools: [{ googleSearch: {} }],
-        temperature: 0
-      }
-    });
+  try {
+    return await withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ role: 'user', parts: [{ text: `Is this real: "${citation.title}" ${citation.author || ""} ${citation.year || ""}` }] }],
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0
+        }
+      });
 
-    const chunk = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.find((c: any) => c.web?.uri);
-    if (chunk && chunk.web) {
-        return { 
-            verified: true, 
-            title: chunk.web.title, 
-            url: chunk.web.uri 
-        };
-    }
+      const chunk = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.find((c: any) => c.web?.uri);
+      if (chunk && chunk.web) {
+          return { 
+              verified: true, 
+              title: chunk.web.title, 
+              url: chunk.web.uri 
+          };
+      }
+      return { verified: false };
+    }, 1, 400);
+  } catch (error: any) {
+    console.error("[Gemini] verifyWithGoogleSearch failed:", error?.message, error?.status, error);
     return { verified: false };
-  }, 1, 400);
+  }
 };
 
 export const reformatCitation = async (canonicalData: any, style: string): Promise<string> => {

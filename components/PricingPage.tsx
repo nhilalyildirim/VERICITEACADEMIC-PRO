@@ -67,7 +67,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBack }) => {
       <div className="max-w-2xl mx-auto bg-white rounded-3xl p-10 border border-slate-100 shadow-sm text-center">
         <h3 className="text-2xl font-bold text-slate-900 mb-4">Why Free?</h3>
         <p className="text-slate-600 leading-relaxed">
-          VeriCite Academic was built by a researcher who experienced firsthand how damaging AI hallucinations can be in academic work. We're committed to keeping this tool free as long as we can. If you find it valuable, share it with your department.
+          AI-generated hallucinations in academic citations are a growing threat to research integrity. Fabricated authors, non-existent journals, and invented DOIs can silently undermine scholarly work — and most researchers never notice. VeriCite Academic exists to change that. Keeping it free ensures that every student, researcher, and institution can verify their sources without barriers.
         </p>
       </div>
     </div>

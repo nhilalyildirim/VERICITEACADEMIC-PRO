@@ -88,9 +88,9 @@ const App: React.FC = () => {
                 authService.saveUserSession(updatedProfile, true);
             }
         }
-    } catch (error) {
-        console.error("Analysis sequence failure:", error);
-        alert("Verification engine encountered an error. Please try again.");
+    } catch (error: any) {
+        console.error("[App] Analysis failed:", error?.message, error);
+        alert(`Verification engine error: ${error?.message || "Unknown error"}. Please try again.`);
     } finally {
         setIsAnalyzing(false);
     }
